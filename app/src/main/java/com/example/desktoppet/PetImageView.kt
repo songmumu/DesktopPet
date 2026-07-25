@@ -79,14 +79,14 @@ class PetImageView(context: Context, private val petState: PetState) : FrameLayo
 
     private fun updatePetImage() {
         val resId = when (petState.expression) {
-            PetState.Expression.NORMAL -> R.drawable.pet_normal
+            PetState.Expression.NORMAL -> R.drawable.pet_idle
             PetState.Expression.SMILE -> R.drawable.pet_happy
             PetState.Expression.HAPPY -> R.drawable.pet_happy
-            PetState.Expression.ANGRY -> R.drawable.pet_angry
+            PetState.Expression.ANGRY -> R.drawable.pet_sad
             PetState.Expression.POUT -> R.drawable.pet_shy
-            PetState.Expression.SLEEP -> R.drawable.pet_sleepy
-            PetState.Expression.SURPRISE -> R.drawable.pet_surprised
-            PetState.Expression.HEART -> R.drawable.pet_love
+            PetState.Expression.SLEEP -> R.drawable.pet_sleep
+            PetState.Expression.SURPRISE -> R.drawable.pet_surprise
+            PetState.Expression.HEART -> R.drawable.pet_kiss
         }
         petImage.setImageResource(resId)
     }
