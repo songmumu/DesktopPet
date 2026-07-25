@@ -14,6 +14,15 @@
     
     <!-- 开机自启动（可选） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    
+    <!-- Android 11+ 查询其他应用权限 -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- 声明要查询的 APP（豆包） -->
+    <queries>
+        <package android:name="com.larus.nova" />
+    </queries>
 
     <application
         android:allowBackup="true"
