@@ -143,61 +143,87 @@ class PetService : Service() {
         try {
             val petImageView = PetImageView(this, petState)
 
-            // 将 280dp 转换为像素（确保窗口可见尺寸）
-            val petPx = TypedValue.applyDimension(
-                TypedValue.COMPLEX_UNIT_DIP, 280f,
-                resources.displayMetrics
-            ).toInt()
+            val windowType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            } else {
+                @Suppress("DEPRECATION")
+                WindowManager.LayoutParams.TYPE_PHONE
+            }
 
-            // 居中放置（避免跑出屏幕边缘）
-            val centerX = (screenWidth - petPx) / 2
-            val centerY = (screenHeight / 3) - (petPx / 2)  // 上方1/3区域
-
-            val layoutParams = WindowManager.LayoutParams(
-                petPx,
-                petPx,
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                } else {
-                    @Suppress("DEPRECATION")
-                    WindowManager.LayoutParams.TYPE_PHONE
-                },
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
+            // --- 第一阶段：全屏红色调试 ---
+            // 用 MATCH_PARENT + FLAG_NOT_TOUCHABLE 确保窗口可见且不干扰操作
+            val debugParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.MATCH_PARENT,
+                WindowManager.LayoutParams.MATCH_PARENT,
+                windowType,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
+                PixelFormat.RGBA_8888
             ).apply {
-                gravity = Gravity.TOP or Gravity.START
-                x = centerX.coerceAtLeast(0)
-                y = centerY.coerceAtLeast(0)
+                gravity = Gravity.FILL
+                x = 0
+                y = 0
             }
 
-            // 设置豆包回调
-            petState.onLaunchApp = { openDoubao() }
-
-            // 设置巡边回调
-            petState.onStartEdgeWalk = { startEdgeWalkLoop() }
-            petState.onEdgePositionNeeded = { side, progress ->
-                updateEdgePosition(side, progress)
-            }
-            petState.onReturnHome = { startReturnHomeLoop() }
-
-            setupTouchListener(petImageView, layoutParams)
-
-            windowManager.addView(petImageView, layoutParams)
-            petView = petImageView
-            petImageView.startAnimation()
-
-            // 获取宠物实际尺寸
-            petImageView.post {
-                petDisplayWidth = petImageView.measuredWidth
-                petDisplayHeight = petImageView.measuredHeight
-                Log.d("PetService", "Pet size: ${petDisplayWidth}x${petDisplayHeight}")
+            val debugView = android.widget.FrameLayout(this).apply {
+                setBackgroundColor(android.graphics.Color.RED)
             }
 
-            // 欢迎语
+            windowManager.addView(debugView, debugParams)
+            petView = debugView
+
+            // 3秒后切换为宠物视图
             mainHandler.postDelayed({
-                val welcomes = listOf("主人来啦~","长按可以找豆包玩哦！","终于见到你啦！","抱抱~","10秒不理我我就溜达啦~")
-                petState.onMessage?.invoke(welcomes.random())
-            }, 800)
+                try {
+                    windowManager.removeView(debugView)
+                } catch (_: Exception) {}
+
+                val petPx = TypedValue.applyDimension(
+                    TypedValue.COMPLEX_UNIT_DIP, 280f,
+                    resources.displayMetrics
+                ).toInt()
+
+                val centerX = (screenWidth - petPx) / 2
+                val centerY = (screenHeight / 3) - (petPx / 2)
+
+                val layoutParams = WindowManager.LayoutParams(
+                    petPx,
+                    petPx,
+                    windowType,
+                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                    PixelFormat.RGBA_8888
+                ).apply {
+                    gravity = Gravity.TOP or Gravity.START
+                    x = centerX.coerceAtLeast(0)
+                    y = centerY.coerceAtLeast(0)
+                }
+
+                // 设置回调
+                petState.onLaunchApp = { openDoubao() }
+                petState.onStartEdgeWalk = { startEdgeWalkLoop() }
+                petState.onEdgePositionNeeded = { side, progress ->
+                    updateEdgePosition(side, progress)
+                }
+                petState.onReturnHome = { startReturnHomeLoop() }
+
+                setupTouchListener(petImageView, layoutParams)
+
+                windowManager.addView(petImageView, layoutParams)
+                petView = petImageView
+                petImageView.startAnimation()
+
+                petImageView.post {
+                    petDisplayWidth = petImageView.measuredWidth
+                    petDisplayHeight = petImageView.measuredHeight
+                    Log.d("PetService", "Pet size: ${petDisplayWidth}x${petDisplayHeight}")
+                }
+
+                // 欢迎语
+                mainHandler.postDelayed({
+                    val welcomes = listOf("主人来啦~","长按可以找豆包玩哦！","终于见到你啦！","抱抱~","10秒不理我我就溜达啦~")
+                    petState.onMessage?.invoke(welcomes.random())
+                }, 800)
+            }, 1000) // 1秒后切换
 
             Toast.makeText(this, "宠物已出现在桌面！", Toast.LENGTH_SHORT).show()
         } catch (e: SecurityException) {
