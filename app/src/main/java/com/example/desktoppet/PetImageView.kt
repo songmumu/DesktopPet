@@ -71,29 +71,29 @@ class PetImageView(context: Context, private val petState: PetState) : FrameLayo
 
     private fun setupCallbacks() {
         petState.onMessage = { msg -> showBubble(msg) }
-        petState.onStateChanged = { updatePetImage() }
-        petState.onAnimation = { anim -> applyAnimation(anim) }
+        petState.onStateChange = { 
+            updatePetImage()
+            applyAnimation()
+        }
     }
 
     private fun updatePetImage() {
-        val resId = when (petState.currentState) {
-            PetState.State.IDLE, PetState.State.IDLE_BREATHE, PetState.State.BLINK -> R.drawable.pet_normal
-            PetState.State.HAPPY -> R.drawable.pet_happy
-            PetState.State.SURPRISED -> R.drawable.pet_surprised
-            PetState.State.SLEEPY -> R.drawable.pet_sleepy
-            PetState.State.LOVE -> R.drawable.pet_love
-            PetState.State.ANGRY -> R.drawable.pet_angry
-            PetState.State.SHY -> R.drawable.pet_shy
-            PetState.State.THINKING -> R.drawable.pet_thinking
-            PetState.State.JUMP, PetState.State.DANCE -> R.drawable.pet_happy
-            else -> R.drawable.pet_normal
+        val resId = when (petState.expression) {
+            PetState.Expression.NORMAL -> R.drawable.pet_normal
+            PetState.Expression.SMILE -> R.drawable.pet_happy
+            PetState.Expression.HAPPY -> R.drawable.pet_happy
+            PetState.Expression.ANGRY -> R.drawable.pet_angry
+            PetState.Expression.POUT -> R.drawable.pet_shy
+            PetState.Expression.SLEEP -> R.drawable.pet_sleepy
+            PetState.Expression.SURPRISE -> R.drawable.pet_surprised
+            PetState.Expression.HEART -> R.drawable.pet_love
         }
         petImage.setImageResource(resId)
     }
 
-    private fun applyAnimation(anim: PetState.Animation) {
-        when (anim) {
-            PetState.Animation.JUMP -> {
+    private fun applyAnimation() {
+        when (petState.action) {
+            PetState.Action.JUMP -> {
                 ValueAnimator.ofFloat(0f, -30f, 0f).apply {
                     duration = 400
                     interpolator = AccelerateDecelerateInterpolator()
@@ -101,27 +101,20 @@ class PetImageView(context: Context, private val petState: PetState) : FrameLayo
                     start()
                 }
             }
-            PetState.Animation.DANCE -> {
+            PetState.Action.DANCE -> {
                 ValueAnimator.ofFloat(-10f, 10f, -10f, 10f, 0f).apply {
                     duration = 600
                     addUpdateListener { petImage.translationX = it.animatedValue as Float }
                     start()
                 }
             }
-            PetState.Animation.SHAKE -> {
-                ValueAnimator.ofFloat(-5f, 5f, -5f, 5f, 0f).apply {
-                    duration = 300
-                    addUpdateListener { petImage.translationX = it.animatedValue as Float }
-                    start()
-                }
-            }
-            PetState.Animation.SPIN -> {
-                petImage.animate().rotationBy(360f).setDuration(500).start()
-            }
-            PetState.Animation.NONE -> {
+            PetState.Action.IDLE -> {
                 petImage.translationX = 0f
                 petImage.translationY = 0f
-                petImage.rotation = 0f
+            }
+            else -> {
+                petImage.translationX = 0f
+                petImage.translationY = 0f
             }
         }
     }
@@ -142,8 +135,7 @@ class PetImageView(context: Context, private val petState: PetState) : FrameLayo
         // 眨眼动画
         blinkRunnable = object : Runnable {
             override fun run() {
-                if (petState.currentState == PetState.State.IDLE || 
-                    petState.currentState == PetState.State.IDLE_BREATHE) {
+                if (petState.action == PetState.Action.IDLE) {
                     petImage.alpha = 0.3f
                     handler.postDelayed({ petImage.alpha = 1f }, 150)
                 }
