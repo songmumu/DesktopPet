@@ -1,4 +1,4 @@
-package com.example.desktoppet
+﻿package com.example.desktoppet
 
 import android.animation.ValueAnimator
 import android.content.Context
@@ -79,7 +79,7 @@ class PetImageView(
 
     init {
         // 半透明红色背景（定位调试用，确认能看见窗口后改回透明）
-        setBackgroundColor(Color.argb(40, 255, 0, 0))
+        setBackgroundColor(Color.TRANSPARENT)
 
         // 1. 宠物图片
         petImage = ImageView(context).apply {
