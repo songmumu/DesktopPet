@@ -75,6 +75,9 @@ class PetState {
 
     // 消息显示回调（用于气泡文字）
     var onMessage: ((String) -> Unit)? = null
+
+    // 打开豆包回调
+    var onLaunchApp: (() -> Unit)? = null
     
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var idleJob: Job? = null
