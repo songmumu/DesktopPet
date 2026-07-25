@@ -30,7 +30,7 @@ class PetService : Service() {
     }
     
     private lateinit var windowManager: WindowManager
-    private var petView: View? = null
+    private var petView: PetImageView? = null
     private lateinit var petState: PetState
     
     override fun onCreate() {
@@ -102,9 +102,9 @@ class PetService : Service() {
     }
     
     private fun showPet() {
-        // 创建宠物视图
-        val petDrawView = PetDrawView(this, petState)
-        
+        // 创建宠物图片视图
+        val petImageView = PetImageView(this, petState)
+
         // 设置布局参数
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -123,34 +123,32 @@ class PetService : Service() {
             x = 100
             y = 100
         }
-        
-        // 添加触摸监听
-        setupTouchListener(petDrawView, layoutParams)
-        
+
+        // 添加触摸监听（拖动 + 点击）
+        setupTouchListener(petImageView, layoutParams)
+
         // 添加到窗口
-        windowManager.addView(petDrawView, layoutParams)
-        petView = petDrawView
-        
+        windowManager.addView(petImageView, layoutParams)
+        petView = petImageView
+
         // 启动动画
-        petDrawView.startAnimation()
+        petImageView.startAnimation()
     }
-    
+
     private fun hidePet() {
         petView?.let { view ->
-            (view as? PetDrawView)?.stopAnimation()
             windowManager.removeView(view)
             petView = null
         }
     }
     
-    private fun setupTouchListener(view: View, params: WindowManager.LayoutParams) {
+    private fun setupTouchListener(view: PetImageView, params: WindowManager.LayoutParams) {
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
         var isDragging = false
-        var lastClickTime = 0L
-        
+
         view.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
@@ -164,7 +162,7 @@ class PetService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     val deltaX = (event.rawX - initialTouchX).toInt()
                     val deltaY = (event.rawY - initialTouchY).toInt()
-                    
+
                     if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
                         isDragging = true
                         params.x = initialX + deltaX
@@ -175,16 +173,8 @@ class PetService : Service() {
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     if (!isDragging) {
-                        // 点击事件
-                        val currentTime = System.currentTimeMillis()
-                        if (currentTime - lastClickTime < 300) {
-                            // 双击：开心状态
-                            petState.onDoubleTap()
-                        } else {
-                            // 单击：随机反应
-                            petState.onTap()
-                        }
-                        lastClickTime = currentTime
+                        // 由 PetImageView 内部处理单击/双击
+                        view.performClick()
                     }
                     true
                 }
