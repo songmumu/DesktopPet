@@ -1,19 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 主气泡 -->
+    <!-- 主气泡：半透明白色 + 淡粉边框 -->
     <item>
         <shape android:shape="rectangle">
-            <solid android:color="#FFFFFF" />
-            <corners android:radius="18dp" />
-            <stroke android:width="1.5dp" android:color="#E8B4C8" />
+            <solid android:color="#CCFFFFFF" />
+            <corners android:radius="16dp" />
+            <stroke android:width="1dp" android:color="#E8B4C8" />
         </shape>
     </item>
-    <!-- 小尾巴（指向下方） -->
-    <item android:gravity="bottom|left" android:left="24dp" android:bottom="-8dp" android:width="16dp" android:height="14dp">
-        <rotate android:fromDegrees="45" android:toDegrees="45">
+    <!-- 小尾巴：三角形指向下方 -->
+    <item
+        android:gravity="bottom|center_horizontal"
+        android:bottom="-6dp"
+        android:left="32dp"
+        android:width="12dp"
+        android:height="10dp">
+        <rotate
+            android:fromDegrees="45"
+            android:pivotX="50%"
+            android:pivotY="50%"
+            android:toDegrees="45">
             <shape android:shape="rectangle">
-                <solid android:color="#FFFFFF" />
-                <stroke android:width="1.5dp" android:color="#E8B4C8" />
+                <solid android:color="#CCFFFFFF" />
+                <stroke android:width="1dp" android:color="#E8B4C8" />
             </shape>
         </rotate>
     </item>
