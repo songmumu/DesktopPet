@@ -38,7 +38,7 @@ class PetService : Service() {
     }
 
     private lateinit var windowManager: WindowManager
-    private var petView: PetImageView? = null
+    private var petView: android.view.View? = null
     private lateinit var petState: PetState
 
     // 屏幕尺寸
