@@ -13,12 +13,14 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.util.DisplayMetrics
+import android.util.Log
 import android.view.Display
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 
 class PetService : Service() {
@@ -63,11 +65,18 @@ class PetService : Service() {
     }
 
     private fun getScreenSize() {
-        val display = windowManager.defaultDisplay
-        val metrics = DisplayMetrics()
-        display.getRealMetrics(metrics)
-        screenWidth = metrics.widthPixels
-        screenHeight = metrics.heightPixels
+        try {
+            val display = windowManager.defaultDisplay
+            val metrics = DisplayMetrics()
+            display.getRealMetrics(metrics)
+            screenWidth = metrics.widthPixels
+            screenHeight = metrics.heightPixels
+            Log.d("PetService", "Screen: ${screenWidth}x${screenHeight}")
+        } catch (e: Exception) {
+            screenWidth = 1080
+            screenHeight = 2400
+            Log.e("PetService", "Failed to get screen size", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -130,59 +139,74 @@ class PetService : Service() {
     // ================================================================
 
     private fun showPet() {
-        val petImageView = PetImageView(this, petState)
+        try {
+            val petImageView = PetImageView(this, petState)
 
-        val layoutParams = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-            } else {
-                @Suppress("DEPRECATION")
-                WindowManager.LayoutParams.TYPE_PHONE
-            },
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                    WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-            PixelFormat.TRANSLUCENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            x = homeX
-            y = homeY
+            val layoutParams = WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                } else {
+                    @Suppress("DEPRECATION")
+                    WindowManager.LayoutParams.TYPE_PHONE
+                },
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                PixelFormat.TRANSLUCENT
+            ).apply {
+                gravity = Gravity.TOP or Gravity.START
+                x = homeX
+                y = homeY
+            }
+
+            // 设置豆包回调
+            petState.onLaunchApp = { openDoubao() }
+
+            // 设置巡边回调
+            petState.onStartEdgeWalk = { startEdgeWalkLoop() }
+            petState.onEdgePositionNeeded = { side, progress ->
+                updateEdgePosition(side, progress)
+            }
+            petState.onReturnHome = { startReturnHomeLoop() }
+
+            setupTouchListener(petImageView, layoutParams)
+
+            windowManager.addView(petImageView, layoutParams)
+            petView = petImageView
+            petImageView.startAnimation()
+
+            // 获取宠物实际尺寸
+            petImageView.post {
+                petDisplayWidth = petImageView.measuredWidth
+                petDisplayHeight = petImageView.measuredHeight
+                Log.d("PetService", "Pet size: ${petDisplayWidth}x${petDisplayHeight}")
+            }
+
+            // 欢迎语
+            mainHandler.postDelayed({
+                val welcomes = listOf("主人来啦~","长按可以找豆包玩哦！","终于见到你啦！","抱抱~","10秒不理我我就溜达啦~")
+                petState.onMessage?.invoke(welcomes.random())
+            }, 800)
+
+            Toast.makeText(this, "宠物已出现在桌面！", Toast.LENGTH_SHORT).show()
+        } catch (e: SecurityException) {
+            Log.e("PetService", "No overlay permission", e)
+            Toast.makeText(this, "❌ 没有悬浮窗权限，请在设置中开启", Toast.LENGTH_LONG).show()
+        } catch (e: Exception) {
+            Log.e("PetService", "Failed to show pet", e)
+            Toast.makeText(this, "❌ 显示宠物失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
         }
-
-        // 设置豆包回调
-        petState.onLaunchApp = { openDoubao() }
-
-        // 设置巡边回调
-        petState.onStartEdgeWalk = { startEdgeWalkLoop() }
-        petState.onEdgePositionNeeded = { side, progress ->
-            updateEdgePosition(side, progress)
-        }
-        petState.onReturnHome = { startReturnHomeLoop() }
-
-        setupTouchListener(petImageView, layoutParams)
-
-        windowManager.addView(petImageView, layoutParams)
-        petView = petImageView
-        petImageView.startAnimation()
-
-        // 获取宠物实际尺寸（等布局完成后）
-        petImageView.post {
-            petDisplayWidth = petImageView.measuredWidth
-            petDisplayHeight = petImageView.measuredHeight
-        }
-
-        // 欢迎语
-        mainHandler.postDelayed({
-            val welcomes = listOf("主人来啦~","长按可以找豆包玩哦！","终于见到你啦！","抱抱~","10秒不理我我就溜达啦~")
-            petState.onMessage?.invoke(welcomes.random())
-        }, 800)
     }
 
     private fun hidePet() {
         stopEdgeWalkLoop()
         petView?.let { view ->
-            windowManager.removeView(view)
+            try {
+                windowManager.removeView(view)
+            } catch (e: Exception) {
+                Log.e("PetService", "Failed to remove pet view", e)
+            }
             petView = null
         }
     }
@@ -191,9 +215,6 @@ class PetService : Service() {
     // 巡边位置更新
     // ================================================================
 
-    /**
-     * 启动巡边位置循环
-     */
     private fun startEdgeWalkLoop() {
         stopEdgeWalkLoop()
         edgeUpdateRunnable = Runnable {
@@ -202,17 +223,11 @@ class PetService : Service() {
         mainHandler.post(edgeUpdateRunnable!!)
     }
 
-    /**
-     * 停止巡边循环
-     */
     private fun stopEdgeWalkLoop() {
         edgeUpdateRunnable?.let { mainHandler.removeCallbacks(it) }
         edgeUpdateRunnable = null
     }
 
-    /**
-     * 巡边位置更新帧
-     */
     private fun updateEdgeWalkPosition() {
         val state = petState
         if (state.edgePhase == PetState.EdgePhase.NONE) return
@@ -222,7 +237,6 @@ class PetService : Service() {
 
         when (state.edgePhase) {
             PetState.EdgePhase.WALK_TO_LEFT -> {
-                // 向左移动直到碰到左边框
                 params.x -= 8
                 if (params.x <= 0) {
                     params.x = 0
@@ -232,10 +246,6 @@ class PetService : Service() {
             }
             PetState.EdgePhase.CLIMBING_EDGE -> {
                 state.advanceEdge()
-                // advanceEdge 会触发 onEdgePositionNeeded 回调
-            }
-            PetState.EdgePhase.RETURN_HOME -> {
-                // returnHomeLoop 处理
             }
             else -> {}
         }
@@ -247,9 +257,6 @@ class PetService : Service() {
         }
     }
 
-    /**
-     * 计算并更新边框位置
-     */
     private fun updateEdgePosition(side: Int, progress: Float) {
         val view = petView ?: return
         val params = view.layoutParams as WindowManager.LayoutParams
@@ -257,19 +264,19 @@ class PetService : Service() {
         val ph = petDisplayHeight.coerceAtLeast(1)
 
         when (side) {
-            0 -> { // 左边框（从下往上）
+            0 -> {
                 params.x = 0
                 params.y = ((screenHeight - ph).toFloat() * (1f - progress)).toInt()
             }
-            1 -> { // 上边框（从左往右）
+            1 -> {
                 params.x = ((screenWidth - pw).toFloat() * progress).toInt()
                 params.y = 0
             }
-            2 -> { // 右边框（从上往下）
+            2 -> {
                 params.x = screenWidth - pw
                 params.y = ((screenHeight - ph).toFloat() * progress).toInt()
             }
-            3 -> { // 底边框（从右往左）
+            3 -> {
                 params.x = ((screenWidth - pw).toFloat() * (1f - progress)).toInt()
                 params.y = screenHeight - ph
             }
@@ -277,9 +284,6 @@ class PetService : Service() {
         windowManager.updateViewLayout(view, params)
     }
 
-    /**
-     * 回家动画循环
-     */
     private fun startReturnHomeLoop() {
         stopEdgeWalkLoop()
         edgeUpdateRunnable = Runnable {
@@ -292,9 +296,7 @@ class PetService : Service() {
         val view = petView ?: return
         val params = view.layoutParams as WindowManager.LayoutParams
 
-        // 向 home 位置线性插值
         val done = petState.advanceReturn()
-        val t = petState.returnProgress
         params.x = (params.x + (homeX - params.x) * 0.12f).toInt()
         params.y = (params.y + (homeY - params.y) * 0.12f).toInt()
         windowManager.updateViewLayout(view, params)
@@ -303,7 +305,6 @@ class PetService : Service() {
             edgeUpdateRunnable = Runnable { returnToHomeStep() }
             mainHandler.postDelayed(edgeUpdateRunnable!!, 30)
         } else {
-            // 回家完成
             params.x = homeX
             params.y = homeY
             windowManager.updateViewLayout(view, params)
@@ -381,10 +382,8 @@ class PetService : Service() {
                     if (isLongPressed) {
                         // 长按已完成
                     } else if (!isDragging) {
-                        // 单击/双击 → 交给 PetImageView
                         view.performClick()
                     } else {
-                        // 拖动结束
                         val drops = listOf("放这里啦~","嘿嘿新家~","这儿不错~","换个位置~","好耶！")
                         mainHandler.postDelayed({
                             petState.onMessage?.invoke(drops.random())
