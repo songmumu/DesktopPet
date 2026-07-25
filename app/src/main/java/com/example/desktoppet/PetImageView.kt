@@ -13,10 +13,10 @@ import kotlin.math.sin
 
 /**
  * 宠物图片视图
- * - 透明背景照片（运行时去除白色背景）
+ * - 透明背景照片
  * - 头顶气泡文字
+ * - 行走帧动画（8帧走路循环）
  * - 拖动、点击、双击
- * - 弹跳 + 走路动画
  */
 class PetImageView(
     private val context: Context,
@@ -34,8 +34,36 @@ class PetImageView(
 
     private var lastTapTime = 0L
 
-    // 表情 → 照片资源
+    // 行走动画帧资源 ID 数组
+    private val walkFrames = intArrayOf(
+        R.drawable.pet_walk_1,
+        R.drawable.pet_walk_2,
+        R.drawable.pet_walk_3,
+        R.drawable.pet_walk_4,
+        R.drawable.pet_walk_5,
+        R.drawable.pet_walk_6,
+        R.drawable.pet_walk_7,
+        R.drawable.pet_walk_8
+    )
+
+    // 上次显示的行走帧索引
+    private var lastWalkFrameIndex = -1
+
+    // 行走帧速率：每 N 帧切换一次（animationFrame 每 50ms 递增一次）
+    // 每 3 帧换一张 = 150ms/帧，循环 8 帧 = 1.2 秒/完整循环
+    private val WALK_FRAME_RATE = 3
+
+    /**
+     * 根据当前状态返回要显示的图片资源
+     */
     private fun getExpressionDrawable(): Int {
+        // 走路时显示行走帧
+        if (petState.action == PetState.Action.WALK_LEFT ||
+            petState.action == PetState.Action.WALK_RIGHT) {
+            val frameIndex = (petState.animationFrame / WALK_FRAME_RATE) % 8
+            return walkFrames[frameIndex]
+        }
+
         return when (petState.expression) {
             PetState.Expression.HAPPY -> R.drawable.pet_happy
             PetState.Expression.HEART -> R.drawable.pet_shy
@@ -66,14 +94,12 @@ class PetImageView(
                 gravity = android.view.Gravity.BOTTOM or android.view.Gravity.START
             }
             scaleType = ImageView.ScaleType.FIT_CENTER
-            // 使用 alpha 通道：如果原图透明则显示透明，否则保持原样
-            // 因为我们用 ColorMatrix 去除白色背景，所以这里不需要额外设置
             setImageResource(getExpressionDrawable())
             tag = getExpressionDrawable()
         }
         addView(petImage)
 
-        // 2. 气泡（头顶左侧）
+        // 2. 气泡（头顶）
         bubbleContainer = FrameLayout(context).apply {
             layoutParams = LayoutParams(
                 (petSize * 0.85).toInt(),
@@ -113,6 +139,9 @@ class PetImageView(
         }
     }
 
+    /**
+     * 更新宠物图片
+     */
     private fun updateImage() {
         val newDrawable = getExpressionDrawable()
         if (petImage.tag != newDrawable) {
@@ -137,7 +166,7 @@ class PetImageView(
             .setDuration(200)
             .start()
 
-        // 抖动一下表示强调
+        // 抖动表示强调
         bubbleContainer.animate()
             .rotation(-3f)
             .setDuration(80)
@@ -196,15 +225,30 @@ class PetImageView(
     }
 
     private fun applyAnimation() {
+        val isWalking = petState.action == PetState.Action.WALK_LEFT ||
+                        petState.action == PetState.Action.WALK_RIGHT
+
+        // 行走时：每帧更新行走关键帧
+        if (isWalking) {
+            val frameIndex = (petState.animationFrame / WALK_FRAME_RATE) % 8
+            if (frameIndex != lastWalkFrameIndex) {
+                lastWalkFrameIndex = frameIndex
+                petImage.setImageResource(walkFrames[frameIndex])
+                petImage.tag = walkFrames[frameIndex]
+            }
+        } else {
+            lastWalkFrameIndex = -1
+        }
+
         // 弹跳（图片 + 气泡一起弹）
         val translateY = -bounceOffset
         petImage.translationY = translateY
         bubbleContainer.translationY = translateY
 
-        // 走路倾斜
+        // 行走倾斜 + 水平翻转（面向方向）
         if (petState.action == PetState.Action.WALK_LEFT) {
             petImage.rotation = -3f + sin(walkOffset * Math.PI.toFloat() * 2) * 5
-            petImage.scaleX = -1f
+            petImage.scaleX = -1f  // 向左翻
         } else if (petState.action == PetState.Action.WALK_RIGHT) {
             petImage.rotation = 3f + sin(walkOffset * Math.PI.toFloat() * 2) * 5
             petImage.scaleX = 1f
@@ -213,7 +257,7 @@ class PetImageView(
             petImage.scaleX = 1f
         }
 
-        // 爱心时放大
+        // 爱心时微微放大
         petImage.scaleY = if (petState.expression == PetState.Expression.HEART) 1.1f else 1f
     }
 
