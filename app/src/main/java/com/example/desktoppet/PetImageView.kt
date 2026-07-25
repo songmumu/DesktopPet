@@ -1,10 +1,9 @@
-package com.example.desktoppet
+﻿package com.example.desktoppet
 
 import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
 import android.view.Gravity
-import android.view.MeasureSpec
 import android.view.View
 import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
@@ -229,10 +228,10 @@ class SpeechBubbleView(context: Context) : FrameLayout(context) {
     private val triHalfBase = 11f
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = MeasureSpec.getSize(widthMeasureSpec)
+        val width = View.MeasureSpec.getSize(widthMeasureSpec)
 
         // 测量子视图（文字）
-        measureChildren(widthMeasureSpec, MeasureSpec.UNSPECIFIED)
+        measureChildren(widthMeasureSpec, View.MeasureSpec.UNSPECIFIED)
         val childH = if (childCount > 0) getChildAt(0).measuredHeight else 0
 
         // 加上三角尖高度
