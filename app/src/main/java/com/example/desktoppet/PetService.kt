@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.PixelFormat
 import android.graphics.Point
 import android.os.Build
@@ -51,6 +52,10 @@ class PetService : Service() {
         getScreenSize()
         petState = PetState()
         createNotificationChannel()
+
+        // 调试：列出所有已安装 APP
+        listInstalledApps()
+
         Log.d(TAG, "Service created. Screen: ${screenWidth}x${screenHeight}")
     }
 
@@ -100,6 +105,37 @@ class PetService : Service() {
             .setOngoing(true)
             .addAction(R.drawable.ic_stop, "关闭", stopPendingIntent)
             .build()
+    }
+
+    // ================================================================
+    // 列出设备上所有已安装 APP（调试用）
+    // ================================================================
+
+    private fun listInstalledApps() {
+        try {
+            val pm = packageManager
+            val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+                .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
+                .sortedBy { it.loadLabel(pm).toString().lowercase() }
+
+            Log.d(TAG, "=== 已安装的 APP (共 ${apps.size} 个) ===")
+            apps.forEach { app ->
+                val label = try { app.loadLabel(pm).toString() } catch (_: Exception) { app.packageName }
+                Log.d(TAG, "  [${label}] -> ${app.packageName}")
+            }
+            Log.d(TAG, "====================================")
+
+            // 特别检查豆包
+            val doubaoFound = apps.any { it.packageName == DOUBAO_PACKAGE }
+            Log.d(TAG, "豆包($DOUBAO_PACKAGE) 是否安装: $doubaoFound")
+
+            if (doubaoFound) {
+                val doubaoIntent = pm.getLaunchIntentForPackage(DOUBAO_PACKAGE)
+                Log.d(TAG, "豆包 LaunchIntent: $doubaoIntent")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "列APP失败", e)
+        }
     }
 
     // ================================================================
@@ -209,8 +245,9 @@ class PetService : Service() {
                         if (!isLongPressed) longPressRunnable?.let { mainHandler.removeCallbacks(it) }
                         isDragging = true
                         val lp = view.layoutParams as WindowManager.LayoutParams
-                        lp.x = (initialX + deltaX).toInt().coerceIn(-lp.width/2, screenWidth - lp.width/2)
-                        lp.y = (initialY + deltaY).toInt().coerceIn(-lp.height/2, screenHeight - lp.height/2)
+                        // 修正边界：宠物完全在屏幕内
+                        lp.x = (initialX + deltaX).toInt().coerceIn(0, screenWidth - lp.width)
+                        lp.y = (initialY + deltaY).toInt().coerceIn(0, screenHeight - lp.height)
                         windowManager.updateViewLayout(view, lp)
                     }
                 }
@@ -253,6 +290,7 @@ class PetService : Service() {
                 petState.onMessage?.invoke(listOf("找豆包玩咯~","来啦来啦~","去找豆包啦！","豆包~我来了！").random())
             } else {
                 petState.onMessage?.invoke("还没装豆包呢~去应用商店下载吧！")
+                Log.e(TAG, "豆包未安装: $DOUBAO_PACKAGE")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open Doubao", e)
