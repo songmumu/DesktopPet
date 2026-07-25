@@ -53,11 +53,26 @@ class PetImageView(
     private val WALK_FRAME_RATE = 5
 
     /**
+     * 返回当前边对应的旋转角度（度）
+     * 左: +90°  上: 180°  右: -90°  底: 0°
+     * 宠物脚踩边框，身体垂直于边框
+     */
+    private fun getEdgeRotation(): Float {
+        return when (petState.edgeSide) {
+            0 -> 90f   // 左边：身体横向，头朝右
+            1 -> 180f  // 上边：倒立
+            2 -> -90f  // 右边：身体横向，头朝左
+            else -> 0f // 底边：正常直立
+        }
+    }
+
+    /**
      * 根据当前状态返回要显示的图片资源
      */
     private fun getExpressionDrawable(): Int {
-        // 走路时显示行走帧
-        if (petState.action == PetState.Action.WALK_LEFT ||
+        // 巡边时也显示行走帧
+        if (petState.action == PetState.Action.WALK_EDGE ||
+            petState.action == PetState.Action.WALK_LEFT ||
             petState.action == PetState.Action.WALK_RIGHT) {
             val frameIndex = (petState.animationFrame / WALK_FRAME_RATE) % walkFrames.size
             return walkFrames[frameIndex]
@@ -225,7 +240,10 @@ class PetImageView(
 
     private fun applyAnimation() {
         val isWalking = petState.action == PetState.Action.WALK_LEFT ||
-                        petState.action == PetState.Action.WALK_RIGHT
+                        petState.action == PetState.Action.WALK_RIGHT ||
+                        petState.action == PetState.Action.WALK_EDGE
+        val isEdgeWalking = petState.action == PetState.Action.WALK_EDGE &&
+                            petState.edgePhase == PetState.EdgePhase.CLIMBING_EDGE
 
         // 行走时：每帧更新行走关键帧
         if (isWalking) {
@@ -244,20 +262,26 @@ class PetImageView(
         petImage.translationY = translateY
         bubbleContainer.translationY = translateY
 
-        // 行走倾斜 + 水平翻转（面向方向）
-        if (petState.action == PetState.Action.WALK_LEFT) {
+        if (isEdgeWalking) {
+            // 沿边框行走：根据边旋转 + 弹跳摆动
+            val rotation = getEdgeRotation()
+            val swing = sin(walkOffset * Math.PI.toFloat() * 2) * 4f
+            petImage.rotation = rotation + swing
+            petImage.scaleX = 1f
+            petImage.scaleY = 1f
+        } else if (petState.action == PetState.Action.WALK_LEFT) {
             petImage.rotation = -3f + sin(walkOffset * Math.PI.toFloat() * 2) * 5
-            petImage.scaleX = -1f  // 向左翻
+            petImage.scaleX = -1f
+            petImage.scaleY = 1f
         } else if (petState.action == PetState.Action.WALK_RIGHT) {
             petImage.rotation = 3f + sin(walkOffset * Math.PI.toFloat() * 2) * 5
             petImage.scaleX = 1f
+            petImage.scaleY = 1f
         } else {
             petImage.rotation = sin(bounceOffset * 0.5f) * 2
             petImage.scaleX = 1f
+            petImage.scaleY = if (petState.expression == PetState.Expression.HEART) 1.1f else 1f
         }
-
-        // 爱心时微微放大
-        petImage.scaleY = if (petState.expression == PetState.Expression.HEART) 1.1f else 1f
     }
 
     override fun performClick(): Boolean {
