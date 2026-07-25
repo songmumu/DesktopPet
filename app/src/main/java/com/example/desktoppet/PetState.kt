@@ -89,8 +89,8 @@ class PetState {
      * 点击事件
      */
     fun onTap() {
-        // 随机反应
-        when (Random.nextInt(5)) {
+        // 随机反应（丰富气泡文字）
+        when (Random.nextInt(12)) {
             0 -> {
                 expression = Expression.HAPPY
                 mood = Mood.HAPPY
@@ -115,6 +115,34 @@ class PetState {
                 expression = Expression.SMILE
                 showMessage("你好呀~")
             }
+            5 -> {
+                expression = Expression.SURPRISE
+                showMessage("嘿嘿~")
+            }
+            6 -> {
+                expression = Expression.HEART
+                showMessage("要抱抱！")
+            }
+            7 -> {
+                expression = Expression.SMILE
+                showMessage("今天开心~")
+            }
+            8 -> {
+                expression = Expression.POUT
+                showMessage("摸我干嘛~")
+            }
+            9 -> {
+                expression = Expression.SURPRISE
+                showMessage("吓我一跳！")
+            }
+            10 -> {
+                expression = Expression.HAPPY
+                showMessage("再摸一下嘛~")
+            }
+            11 -> {
+                expression = Expression.SMILE
+                showMessage("嘿嘿你最好了！")
+            }
         }
         
         onStateChange?.invoke()
@@ -136,7 +164,8 @@ class PetState {
         expression = Expression.HEART
         mood = Mood.EXCITED
         affection = (affection + 15).coerceIn(0, 100)
-        showMessage("超开心！")
+        val msgs = listOf("超开心！","太喜欢了！","心都要化了~","好幸福呀！")
+        showMessage(msgs.random())
         
         onStateChange?.invoke()
         
@@ -152,22 +181,35 @@ class PetState {
      * 长时间不互动
      */
     fun onIdle() {
-        when (Random.nextInt(3)) {
+        when (Random.nextInt(5)) {
             0 -> {
                 mood = Mood.BORED
                 expression = Expression.POUT
-                showMessage("好无聊~")
+                val msgs = listOf("好无聊~","有人吗...","为什么不理我~","寂寞...")
+                showMessage(msgs.random())
             }
             1 -> {
                 mood = Mood.ANGRY
                 expression = Expression.ANGRY
-                showMessage("不理我！")
+                val msgs = listOf("哼！生气了！","再不理我就走啦！","气死我了！")
+                showMessage(msgs.random())
             }
             2 -> {
                 mood = Mood.SLEEPY
                 expression = Expression.SLEEP
                 action = Action.SLEEP
-                showMessage("困了...")
+                val msgs = listOf("困了...zzZ","好累...先睡了","哈欠~","zzZ")
+                showMessage(msgs.random())
+            }
+            3 -> {
+                mood = Mood.BORED
+                expression = Expression.SURPRISE
+                showMessage("呜~想你了")
+            }
+            4 -> {
+                mood = Mood.BORED
+                expression = Expression.POUT
+                showMessage("你干嘛去了呀")
             }
         }
         
@@ -201,11 +243,13 @@ class PetState {
                     onStateChange?.invoke()
                 }
                 
-                // 随机卖萌
+                // 随机卖萌（带气泡）
                 if (Random.nextBoolean()) {
+                    val autoMsg = listOf("嘿嘿~","我是最可爱的！","今天也要加油哦！","主人~在干嘛呢？","看我~看我~","好无聊...陪我玩嘛~")
+                    showMessage(autoMsg.random())
                     expression = Expression.SMILE
                     onStateChange?.invoke()
-                    delay(2000)
+                    delay(3000)
                     expression = Expression.NORMAL
                     onStateChange?.invoke()
                 }
