@@ -72,6 +72,9 @@ class PetState {
     
     // 状态更新回调
     var onStateChange: (() -> Unit)? = null
+
+    // 消息显示回调（用于气泡文字）
+    var onMessage: ((String) -> Unit)? = null
     
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var idleJob: Job? = null
@@ -234,10 +237,9 @@ class PetState {
     }
     
     /**
-     * 显示消息（可以扩展为气泡）
+     * 显示消息（气泡文字）
      */
     private fun showMessage(message: String) {
-        // 这里可以扩展为显示气泡文字
-        // 目前仅作为状态记录
+        onMessage?.invoke(message)
     }
 }
