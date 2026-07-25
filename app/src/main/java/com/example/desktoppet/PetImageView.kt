@@ -1,4 +1,4 @@
-﻿package com.example.desktoppet
+package com.example.desktoppet
 
 import android.animation.ValueAnimator
 import android.content.Context
@@ -9,277 +9,226 @@ import android.view.animation.AccelerateDecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.TextView
-import kotlin.math.sin
+import java.util.*
 
-/**
- * 宠物视图：
- * - 底层：宠物照片（透明背景，alpha 二值化）
- * - 上层：SpeechBubbleView（带三角尖的气泡）
- * - 动画：待机弹跳 + 行走帧 + 原地跳/摇摆
- */
-class PetImageView(
-    private val context: Context,
-    private val petState: PetState
-) : FrameLayout(context) {
+class PetImageView(context: Context, private val petState: PetState) : FrameLayout(context) {
 
     private val petImage: ImageView
-    private val bubbleView: SpeechBubbleView
+    private val bubbleContainer: FrameLayout
     private val bubbleText: TextView
+    private val bubbleView: SpeechBubbleView
 
-    private val petSize = 280
-    private var bounceOffset = 0f
-    private var walkOffset = 0f
-
-    // 7 帧行走动画
-    private val walkFrames = intArrayOf(
-        R.drawable.pet_walk_1, R.drawable.pet_walk_2, R.drawable.pet_walk_3,
-        R.drawable.pet_walk_4, R.drawable.pet_walk_5, R.drawable.pet_walk_6,
-        R.drawable.pet_walk_7
-    )
-    private var lastWalkFrameIndex = -1
-    private val WALK_FRAME_RATE = 5
+    private val random = Random()
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var idleAnimator: ValueAnimator? = null
+    private var bubbleRunnable: Runnable? = null
+    private var blinkRunnable: Runnable? = null
 
     init {
+        // 设置透明背景
         setBackgroundColor(Color.TRANSPARENT)
 
-        // === 底层：宠物照片 ===
+        // 宠物图片
         petImage = ImageView(context).apply {
-            layoutParams = LayoutParams(petSize, petSize).apply {
-                gravity = Gravity.BOTTOM or Gravity.START
-            }
             scaleType = ImageView.ScaleType.FIT_CENTER
-            setImageResource(getExpressionDrawable())
+            setBackgroundColor(Color.TRANSPARENT)
         }
-        addView(petImage)
+        addView(petImage, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
-        // === 上层：气泡视图（气泡 = 圆角矩形 + 底部三角尖，尖指向宠物）===
-        val bubbleW = (petSize * 0.82).toInt()
-        bubbleView = SpeechBubbleView(context).apply {
-            layoutParams = LayoutParams(bubbleW, LayoutParams.WRAP_CONTENT).apply {
-                gravity = Gravity.TOP or Gravity.START
-                leftMargin = 10
-                topMargin = -50  // 气泡底部（三角尖起点）在宠物头顶上方
-            }
-            visibility = View.GONE
+        // 气泡容器
+        bubbleContainer = FrameLayout(context).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            visibility = INVISIBLE
         }
-        addView(bubbleView)
-
+        
+        // 气泡背景（带三角尖）
+        bubbleView = SpeechBubbleView(context)
+        bubbleContainer.addView(bubbleView, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT))
+        
+        // 气泡文字
         bubbleText = TextView(context).apply {
-            layoutParams = LayoutParams(
-                LayoutParams.MATCH_PARENT,
-                LayoutParams.WRAP_CONTENT
-            ).apply {
-                setPadding(24, 14, 24, 36)  // 底部留 36dp 给三角尖
-            }
-            textSize = 13f
-            setTextColor(Color.parseColor("#5D4037"))
-            maxLines = 2
-            ellipsize = android.text.TextUtils.TruncateAt.END
+            textSize = 14f
+            setTextColor(Color.BLACK)
+            setPadding(24, 12, 24, 24)  // 底部留多一点给三角尖
             gravity = Gravity.CENTER
         }
-        bubbleView.addView(bubbleText)
+        bubbleContainer.addView(bubbleText, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            topMargin = 0
+            bottomMargin = 12
+        })
+        
+        // 气泡位置：紧贴宠物头顶（topMargin 为负值，向上偏移）
+        addView(bubbleContainer, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            topMargin = (-70 * context.resources.displayMetrics.density).toInt()
+        })
 
-        petState.onStateChange = { updateImage() }
+        setupCallbacks()
+        updatePetImage()
+        startIdleAnimations()
+    }
+
+    private fun setupCallbacks() {
         petState.onMessage = { msg -> showBubble(msg) }
-        startAnimation()
+        petState.onStateChanged = { updatePetImage() }
+        petState.onAnimation = { anim -> applyAnimation(anim) }
     }
 
-    private fun getExpressionDrawable(): Int {
-        val action = petState.action
-        if (action == PetState.Action.WALK_LEFT || action == PetState.Action.WALK_RIGHT) {
-            return walkFrames[(petState.animationFrame / WALK_FRAME_RATE) % walkFrames.size]
+    private fun updatePetImage() {
+        val resId = when (petState.currentState) {
+            PetState.State.IDLE, PetState.State.IDLE_BREATHE, PetState.State.BLINK -> R.drawable.pet_normal
+            PetState.State.HAPPY -> R.drawable.pet_happy
+            PetState.State.SURPRISED -> R.drawable.pet_surprised
+            PetState.State.SLEEPY -> R.drawable.pet_sleepy
+            PetState.State.LOVE -> R.drawable.pet_love
+            PetState.State.ANGRY -> R.drawable.pet_angry
+            PetState.State.SHY -> R.drawable.pet_shy
+            PetState.State.THINKING -> R.drawable.pet_thinking
+            PetState.State.JUMP, PetState.State.DANCE -> R.drawable.pet_happy
+            else -> R.drawable.pet_normal
         }
-        return when (petState.expression) {
-            PetState.Expression.HAPPY   -> R.drawable.pet_happy
-            PetState.Expression.HEART    -> R.drawable.pet_shy
-            PetState.Expression.ANGRY    -> R.drawable.pet_excited
-            PetState.Expression.POUT     -> R.drawable.pet_kiss
-            PetState.Expression.SLEEP    -> R.drawable.pet_sleep
-            PetState.Expression.SURPRISE -> R.drawable.pet_surprise
-            PetState.Expression.SMILE    -> R.drawable.pet_shy
-            PetState.Expression.NORMAL   -> when (petState.mood) {
-                PetState.Mood.HAPPY  -> R.drawable.pet_happy
-                PetState.Mood.EXCITED -> R.drawable.pet_excited
-                PetState.Mood.SLEEPY -> R.drawable.pet_sleep
-                PetState.Mood.ANGRY  -> R.drawable.pet_excited
-                PetState.Mood.BORED  -> R.drawable.pet_idle
+        petImage.setImageResource(resId)
+    }
+
+    private fun applyAnimation(anim: PetState.Animation) {
+        when (anim) {
+            PetState.Animation.JUMP -> {
+                ValueAnimator.ofFloat(0f, -30f, 0f).apply {
+                    duration = 400
+                    interpolator = AccelerateDecelerateInterpolator()
+                    addUpdateListener { petImage.translationY = it.animatedValue as Float }
+                    start()
+                }
+            }
+            PetState.Animation.DANCE -> {
+                ValueAnimator.ofFloat(-10f, 10f, -10f, 10f, 0f).apply {
+                    duration = 600
+                    addUpdateListener { petImage.translationX = it.animatedValue as Float }
+                    start()
+                }
+            }
+            PetState.Animation.SHAKE -> {
+                ValueAnimator.ofFloat(-5f, 5f, -5f, 5f, 0f).apply {
+                    duration = 300
+                    addUpdateListener { petImage.translationX = it.animatedValue as Float }
+                    start()
+                }
+            }
+            PetState.Animation.SPIN -> {
+                petImage.animate().rotationBy(360f).setDuration(500).start()
+            }
+            PetState.Animation.NONE -> {
+                petImage.translationX = 0f
+                petImage.translationY = 0f
+                petImage.rotation = 0f
             }
         }
     }
 
-    private fun updateImage() {
-        petImage.setImageResource(getExpressionDrawable())
+    private fun startIdleAnimations() {
+        // 呼吸动画（轻微缩放）
+        idleAnimator = ValueAnimator.ofFloat(1f, 1.03f, 1f).apply {
+            duration = 2000
+            repeatCount = ValueAnimator.INFINITE
+            addUpdateListener {
+                val scale = it.animatedValue as Float
+                petImage.scaleX = scale
+                petImage.scaleY = scale
+            }
+            start()
+        }
+
+        // 眨眼动画
+        blinkRunnable = object : Runnable {
+            override fun run() {
+                if (petState.currentState == PetState.State.IDLE || 
+                    petState.currentState == PetState.State.IDLE_BREATHE) {
+                    petImage.alpha = 0.3f
+                    handler.postDelayed({ petImage.alpha = 1f }, 150)
+                }
+                handler.postDelayed(this, (3000 + random.nextInt(4000)).toLong())
+            }
+        }
+        handler.postDelayed(blinkRunnable!!, 3000)
+
+        // 自动冒泡
+        bubbleRunnable = object : Runnable {
+            override fun run() {
+                if (bubbleContainer.visibility != VISIBLE && random.nextFloat() < 0.6f) {
+                    val msgs = listOf("好无聊呀~","主人~","想你了~","在干嘛呢？","陪陪我嘛~")
+                    showBubble(msgs.random())
+                }
+                handler.postDelayed(this, (20000 + random.nextInt(15000)).toLong())
+            }
+        }
+        handler.postDelayed(bubbleRunnable!!, 20000)
     }
 
-    private fun showBubble(message: String) {
-        bubbleText.text = message
-        bubbleView.visibility = View.VISIBLE
-        bubbleView.alpha = 0f
-        bubbleView.translationY = 8f
+    private fun showBubble(text: String) {
+        bubbleText.text = text
+        bubbleView.invalidate()
+        bubbleContainer.visibility = VISIBLE
+        bubbleContainer.alpha = 0f
+        bubbleContainer.animate().alpha(1f).setDuration(200).start()
 
-        bubbleView.animate().alpha(1f).translationY(0f).setDuration(200).start()
-
-        // 抖动
-        bubbleView.animate().rotation(-3f).setDuration(80)
-            .withEndAction {
-                bubbleView.animate().rotation(3f).setDuration(80)
-                    .withEndAction {
-                        bubbleView.animate().rotation(0f).setDuration(80).start()
-                    }.start()
+        bubbleRunnable?.let { handler.removeCallbacks(it) }
+        handler.postDelayed({
+            bubbleContainer.animate().alpha(0f).setDuration(200).withEndAction {
+                bubbleContainer.visibility = INVISIBLE
             }.start()
-
-        bubbleView.removeCallbacks(hideRunnable)
-        bubbleView.postDelayed(hideRunnable, 3000)
+        }, 3000)
+        
+        bubbleRunnable?.let { handler.postDelayed(it, (20000 + random.nextInt(15000)).toLong()) }
     }
 
-    private val hideRunnable = Runnable {
-        bubbleView.animate().alpha(0f).translationY(8f).setDuration(200)
-            .withEndAction { bubbleView.visibility = View.GONE }
-            .start()
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        idleAnimator?.cancel()
+        blinkRunnable?.let { handler.removeCallbacks(it) }
+        bubbleRunnable?.let { handler.removeCallbacks(it) }
     }
 
-    private fun startAnimation() {
-        ValueAnimator.ofFloat(0f, 10f, 0f).apply {
-            duration = 1000
-            repeatCount = ValueAnimator.INFINITE
-            interpolator = AccelerateDecelerateInterpolator()
-            addUpdateListener { anim ->
-                bounceOffset = anim.animatedValue as Float
-                applyAnimation()
-            }
-            start()
+    // ================================================================
+    // 自定义气泡 View（带三角尖）
+    // ================================================================
+    
+    private inner class SpeechBubbleView(context: Context) : View(context) {
+        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#F0FFFFFF")  // 半透明白色
+            style = Paint.Style.FILL
         }
-        ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = 500
-            repeatCount = ValueAnimator.INFINITE
-            addUpdateListener { anim -> walkOffset = anim.animatedValue as Float }
-            start()
-        }
-    }
+        private val path = Path()
+        private val cornerRadius = 24f
+        private val triangleHeight = 16f
+        private val triangleWidth = 24f
 
-    private fun applyAnimation() {
-        val action = petState.action
-        val isWalking = action == PetState.Action.WALK_LEFT || action == PetState.Action.WALK_RIGHT
-
-        // 行走帧切换
-        if (isWalking) {
-            val frame = (petState.animationFrame / WALK_FRAME_RATE) % walkFrames.size
-            if (frame != lastWalkFrameIndex) {
-                lastWalkFrameIndex = frame
-                petImage.setImageResource(walkFrames[frame])
-            }
-        } else if (lastWalkFrameIndex >= 0) {
-            lastWalkFrameIndex = -1
-        }
-
-        // 统一弹跳位移
-        val bounceY = -bounceOffset
-        petImage.translationY = bounceY
-        bubbleView.translationY = bounceY
-
-        // 动作动画
-        when (action) {
-            PetState.Action.WALK_LEFT -> {
-                petImage.rotation = -3f + sin(walkOffset * Math.PI.toFloat() * 2) * 5
-                petImage.scaleX = -1f
-                petImage.scaleY = 1f
-            }
-            PetState.Action.WALK_RIGHT -> {
-                petImage.rotation = 3f + sin(walkOffset * Math.PI.toFloat() * 2) * 5
-                petImage.scaleX = 1f
-                petImage.scaleY = 1f
-            }
-            PetState.Action.JUMP -> {
-                val phase = (bounceOffset / 10f) % 1f
-                val arc = sin(phase * Math.PI).toFloat()
-                petImage.translationY = bounceY - arc * 30
-                bubbleView.translationY = bounceY - arc * 30
-            }
-            PetState.Action.DANCE -> {
-                petImage.rotation = sin(bounceOffset * 0.3f * Math.PI.toFloat()) * 15
-            }
-            else -> {
-                petImage.rotation = sin(bounceOffset * 0.5f) * 2
-                petImage.scaleX = 1f
-                petImage.scaleY = if (petState.expression == PetState.Expression.HEART) 1.1f else 1f
-            }
-        }
-    }
-}
-
-/**
- * 带三角尖的气泡视图
- * 外观：圆角矩形（上方 3 角）+ 底部三角尖（指向宠物）
- */
-class SpeechBubbleView(context: Context) : FrameLayout(context) {
-
-    private val bubblePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#E8FFFFFF")  // 半透明白底
-        style = Paint.Style.FILL
-    }
-    private val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.parseColor("#CCCCCC")
-        style = Paint.Style.STROKE
-        strokeWidth = 1.5f
-    }
-
-    private val cornerRadius = 18f
-    private val triHeight = 16f
-    private val triHalfBase = 11f
-
-    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-        val width = View.MeasureSpec.getSize(widthMeasureSpec)
-
-        // 测量子视图（文字）
-        measureChildren(widthMeasureSpec, View.MeasureSpec.UNSPECIFIED)
-        val childH = if (childCount > 0) getChildAt(0).measuredHeight else 0
-
-        // 加上三角尖高度
-        val desiredH = childH + triHeight.toInt() + paddingTop + paddingBottom
-        val h = resolveSize(desiredH, heightMeasureSpec)
-        setMeasuredDimension(width, h)
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val w = width.toFloat()
-        val h = height.toFloat()
-        val triTop = h - triHeight  // 三角尖起点
-
-        // 圆角矩形（顶部 3 角，底部 2 角为直角连接三角尖）
-        val rect = RectF(1f, 1f, w - 1f, triTop)
-        val path = Path().apply {
-            // 顶左圆角
-            moveTo(rect.left + cornerRadius, rect.top)
-            arcTo(RectF(rect.left, rect.top, rect.left + cornerRadius * 2, rect.top + cornerRadius * 2),
-                  180f, 90f)
-            // 顶边到顶右
-            lineTo(rect.right - cornerRadius, rect.top)
-            arcTo(RectF(rect.right - cornerRadius * 2, rect.top, rect.right, rect.top + cornerRadius * 2),
-                  -90f, 90f)
-            // 右边到右下
-            lineTo(rect.right, triTop)
-            // 底边（连接三角尖，直角）
-            lineTo(triTop, triTop)
-            // 左下到左顶
-            lineTo(rect.left, triTop)
-            // 左上圆角
-            arcTo(RectF(rect.left, rect.top, rect.left + cornerRadius * 2, rect.top + cornerRadius * 2),
-                  90f, 90f)
-            close()
+        override fun onDraw(canvas: Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            
+            path.reset()
+            
+            // 圆角矩形主体
+            val rectH = h - triangleHeight
+            path.addRoundRect(0f, 0f, w, rectH, cornerRadius, cornerRadius, Path.Direction.CW)
+            
+            // 底部三角尖（指向宠物）
+            val cx = w / 2
+            path.moveTo(cx - triangleWidth/2, rectH)
+            path.lineTo(cx, h)
+            path.lineTo(cx + triangleWidth/2, rectH)
+            path.close()
+            
+            canvas.drawPath(path, paint)
         }
 
-        canvas.drawPath(path, bubblePaint)
-        canvas.drawPath(path, borderPaint)
-
-        // 三角尖（尖向下，指向宠物）
-        val triPath = Path().apply {
-            val cx = w / 2f
-            moveTo(cx - triHalfBase, triTop)
-            lineTo(cx, h)
-            lineTo(cx + triHalfBase, triTop)
-            close()
+        override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+            // 测量时预留三角尖空间
+            val desiredW = View.MeasureSpec.getSize(widthMeasureSpec)
+            val desiredH = (60 * resources.displayMetrics.density).toInt()  // 默认高度
+            setMeasuredDimension(desiredW, desiredH)
         }
-        canvas.drawPath(triPath, bubblePaint)
-        canvas.drawPath(triPath, borderPaint)
     }
 }
