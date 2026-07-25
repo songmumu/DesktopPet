@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
 import android.view.Gravity
 import android.view.MotionEvent
@@ -133,6 +134,12 @@ class PetService : Service() {
 
         // 启动动画
         petImageView.startAnimation()
+
+        // 启动欢迎语（延迟 0.8 秒，等宠物出现）
+        Handler(mainLooper).postDelayed({
+            val welcomes = listOf("主人来啦~","嘿嘿你来了！","终于见到你啦！","抱抱~","想你啦！")
+            petState.onMessage?.invoke(welcomes.random())
+        }, 800)
     }
 
     private fun hidePet() {
@@ -175,6 +182,13 @@ class PetService : Service() {
                     if (!isDragging) {
                         // 由 PetImageView 内部处理单击/双击
                         view.performClick()
+                    } else {
+                        // 拖动结束后随机说一句
+                        val drops = listOf("放这里啦~","嘿嘿新家~","这儿不错~","换个位置~","好耶！")
+                        val dropMsg = drops.random()
+                        Handler(mainLooper).postDelayed({
+                            petState.onMessage?.invoke(dropMsg)
+                        }, 300)
                     }
                     true
                 }
