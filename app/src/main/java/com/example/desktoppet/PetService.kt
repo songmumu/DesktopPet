@@ -149,6 +149,10 @@ class PetService : Service() {
                 resources.displayMetrics
             ).toInt()
 
+            // 居中放置（避免跑出屏幕边缘）
+            val centerX = (screenSize.x - petPx) / 2
+            val centerY = (screenSize.y / 3) - (petPx / 2)  // 上方1/3区域
+
             val layoutParams = WindowManager.LayoutParams(
                 petPx,
                 petPx,
@@ -162,8 +166,8 @@ class PetService : Service() {
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
-                x = homeX
-                y = homeY
+                x = centerX.coerceAtLeast(0)
+                y = centerY.coerceAtLeast(0)
             }
 
             // 设置豆包回调
