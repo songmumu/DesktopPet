@@ -4,6 +4,8 @@ import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.*
 import android.view.View
+import android.view.WindowManager
+import android.widget.FrameLayout
 import android.view.animation.AccelerateDecelerateInterpolator
 import kotlin.math.sin
 
@@ -70,7 +72,7 @@ class PetDrawView(
     
     init {
         // 设置视图大小
-        layoutParams = LayoutParams(petSize, petSize)
+        layoutParams = FrameLayout.LayoutParams(petSize, petSize)
         
         // 监听状态变化
         petState.onStateChange = {
