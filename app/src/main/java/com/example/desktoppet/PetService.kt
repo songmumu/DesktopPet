@@ -1,4 +1,4 @@
-﻿package com.example.desktoppet
+package com.example.desktoppet
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -41,6 +41,7 @@ class PetService : Service() {
 
     private var screenWidth = 0
     private var screenHeight = 0
+    private var statusBarHeight = 0
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var longPressRunnable: Runnable? = null
@@ -52,10 +53,6 @@ class PetService : Service() {
         getScreenSize()
         petState = PetState()
         createNotificationChannel()
-
-        // 调试：列出所有已安装 APP
-        listInstalledApps()
-
         Log.d(TAG, "Service created. Screen: ${screenWidth}x${screenHeight}")
     }
 
@@ -108,37 +105,6 @@ class PetService : Service() {
     }
 
     // ================================================================
-    // 列出设备上所有已安装 APP（调试用）
-    // ================================================================
-
-    private fun listInstalledApps() {
-        try {
-            val pm = packageManager
-            val apps = pm.getInstalledApplications(PackageManager.GET_META_DATA)
-                .filter { pm.getLaunchIntentForPackage(it.packageName) != null }
-                .sortedBy { it.loadLabel(pm).toString().lowercase() }
-
-            Log.d(TAG, "=== 已安装的 APP (共 ${apps.size} 个) ===")
-            apps.forEach { app ->
-                val label = try { app.loadLabel(pm).toString() } catch (_: Exception) { app.packageName }
-                Log.d(TAG, "  [${label}] -> ${app.packageName}")
-            }
-            Log.d(TAG, "====================================")
-
-            // 特别检查豆包
-            val doubaoFound = apps.any { it.packageName == DOUBAO_PACKAGE }
-            Log.d(TAG, "豆包($DOUBAO_PACKAGE) 是否安装: $doubaoFound")
-
-            if (doubaoFound) {
-                val doubaoIntent = pm.getLaunchIntentForPackage(DOUBAO_PACKAGE)
-                Log.d(TAG, "豆包 LaunchIntent: $doubaoIntent")
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "列APP失败", e)
-        }
-    }
-
-    // ================================================================
     // 显示宠物
     // ================================================================
 
@@ -176,7 +142,7 @@ class PetService : Service() {
             }, 800)
 
             setupTouchListener(petImgView)
-            Log.d(TAG, "Pet shown. Size=${petPx}px. Gravity=CENTER.")
+            Log.d(TAG, "Pet shown. Size=${petPx}px at (${layoutParams.x}, ${layoutParams.y})")
             Toast2.show(this, "宠物已出现在桌面！")
         } catch (e: SecurityException) {
             Log.e(TAG, "No overlay permission", e)
@@ -235,31 +201,41 @@ class PetService : Service() {
                         initialY = lp.y
                     }
 
-                    longPressRunnable = Runnable { isLongPressed = true; petState.onLaunchApp?.invoke() }
+                    longPressRunnable = Runnable { 
+                        isLongPressed = true
+                        petState.onLaunchApp?.invoke() 
+                    }
                     mainHandler.postDelayed(longPressRunnable!!, 500)
                 }
                 MotionEvent.ACTION_MOVE -> {
                     val deltaX = event.rawX - startX
                     val deltaY = event.rawY - startY
-                    if (Math.sqrt((deltaX*deltaX + deltaY*deltaY).toDouble()) > MOVE_THRESHOLD) {
+                    if (kotlin.math.sqrt((deltaX*deltaX + deltaY*deltaY).toDouble()) > MOVE_THRESHOLD) {
                         if (!isLongPressed) longPressRunnable?.let { mainHandler.removeCallbacks(it) }
                         isDragging = true
                         val lp = view.layoutParams as WindowManager.LayoutParams
-                        // 修正边界：宠物完全在屏幕内
-                        lp.x = (initialX + deltaX).toInt().coerceIn(0, screenWidth - lp.width)
-                        lp.y = (initialY + deltaY).toInt().coerceIn(0, screenHeight - lp.height)
+                        
+                        // 计算新位置
+                        val newX = (initialX + deltaX).toInt()
+                        val newY = (initialY + deltaY).toInt()
+                        
+                        // 边界限制：允许宠物贴边（x 范围 0 ~ screenWidth-lp.width）
+                        // y 范围 0 ~ screenHeight-lp.height-statusBarHeight（避开状态栏）
+                        lp.x = newX.coerceIn(0, screenWidth - lp.width)
+                        lp.y = newY.coerceIn(0, screenHeight - lp.height - statusBarHeight)
+                        
                         windowManager.updateViewLayout(view, lp)
                     }
                 }
                 MotionEvent.ACTION_UP -> {
                     longPressRunnable?.let { mainHandler.removeCallbacks(it) }
                     when {
-                        isLongPressed -> {}  // 长按已触发了
+                        isLongPressed -> {}  // 长按已触发
                         isDragging -> petState.onMessage?.invoke(listOf("放这里~","好吧~","就这儿了！","挪一下~","可以了~").random())
                         else -> {
                             val now = System.currentTimeMillis()
-                            val dx = Math.abs(event.rawX - lastTapX).toInt()
-                            val dy = Math.abs(event.rawY - lastTapY).toInt()
+                            val dx = kotlin.math.abs(event.rawX - lastTapX).toInt()
+                            val dy = kotlin.math.abs(event.rawY - lastTapY).toInt()
                             if (now - lastTapTime < DOUBLE_TAP_TIMEOUT && dx < MOVE_THRESHOLD && dy < MOVE_THRESHOLD) {
                                 petState.onDoubleTap()
                                 lastTapTime = 0
@@ -283,14 +259,31 @@ class PetService : Service() {
 
     private fun openDoubao() {
         try {
-            val intent = packageManager.getLaunchIntentForPackage(DOUBAO_PACKAGE)
+            // 方法1：直接获取启动 Intent
+            var intent = packageManager.getLaunchIntentForPackage(DOUBAO_PACKAGE)
+            
+            // 方法2：如果没拿到，尝试用 resolveActivity
+            if (intent == null) {
+                val testIntent = Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    setPackage(DOUBAO_PACKAGE)
+                }
+                intent = packageManager.resolveActivity(testIntent, 0)?.activityInfo?.let {
+                    Intent(Intent.ACTION_MAIN).apply {
+                        addCategory(Intent.CATEGORY_LAUNCHER)
+                        setClassName(it.packageName, it.name)
+                    }
+                }
+            }
+            
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 startActivity(intent)
                 petState.onMessage?.invoke(listOf("找豆包玩咯~","来啦来啦~","去找豆包啦！","豆包~我来了！").random())
+                Log.d(TAG, "Doubao launched successfully")
             } else {
                 petState.onMessage?.invoke("还没装豆包呢~去应用商店下载吧！")
-                Log.e(TAG, "豆包未安装: $DOUBAO_PACKAGE")
+                Log.e(TAG, "豆包未安装或无法启动: $DOUBAO_PACKAGE")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to open Doubao", e)
@@ -309,6 +302,12 @@ class PetService : Service() {
         }
         screenWidth = size.x
         screenHeight = size.y
+        
+        // 获取状态栏高度
+        val resourceId = resources.getIdentifier("status_bar_height", "dimen", "android")
+        statusBarHeight = if (resourceId > 0) resources.getDimensionPixelSize(resourceId) else 0
+        
+        Log.d(TAG, "Screen: ${screenWidth}x${screenHeight}, statusBar: $statusBarHeight")
     }
 }
 
