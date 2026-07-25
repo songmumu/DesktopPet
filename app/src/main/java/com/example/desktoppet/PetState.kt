@@ -25,8 +25,7 @@ class PetState {
         SIT,        // 坐下
         SLEEP,      // 睡觉
         JUMP,       // 跳跃
-        DANCE,      // 跳舞
-        WALK_EDGE   // 沿边框行走
+        DANCE       // 跳舞
     }
 
     // 表情
@@ -41,14 +40,6 @@ class PetState {
         HEART       // 爱心眼
     }
 
-    // 巡边状态机
-    enum class EdgePhase {
-        NONE,           // 正常状态
-        WALK_TO_LEFT,   // 正在走到左边框
-        CLIMBING_EDGE,  // 沿边框行走中
-        RETURN_HOME     // 返回到屏幕中下方
-    }
-
     // 当前状态
     var mood: Mood = Mood.HAPPY
         private set
@@ -57,16 +48,6 @@ class PetState {
         private set
 
     var expression: Expression = Expression.NORMAL
-        private set
-
-    // 巡边状态
-    var edgePhase: EdgePhase = EdgePhase.NONE
-        private set
-    var edgeSide: Int = 0          // 0=左  1=上  2=右  3=底（顺时针）
-        private set
-    var edgeProgress: Float = 0f   // 当前边进度 0~1
-        private set
-    var returnProgress: Float = 1f // 回家进度 1→0
         private set
 
     // 饥饿度 (0-100)
@@ -98,24 +79,13 @@ class PetState {
     // 打开豆包回调
     var onLaunchApp: (() -> Unit)? = null
 
-    // 巡边相关回调
-    var onStartEdgeWalk: (() -> Unit)? = null
-    var onEdgePositionNeeded: ((edgeSide: Int, edgeProgress: Float) -> Unit)? = null
-    var onReturnHome: (() -> Unit)? = null
-
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private var idleJob: Job? = null
     private var animationJob: Job? = null
-    private var edgeMonitorJob: Job? = null
-
-    // 上次互动时间戳
-    var lastInteractionTime: Long = System.currentTimeMillis()
-        private set
 
     init {
         startIdleBehavior()
         startAnimation()
-        startEdgeWalkMonitor()
     }
 
     // ================================================================
@@ -123,25 +93,9 @@ class PetState {
     // ================================================================
 
     /**
-     * 记录互动
-     */
-    private fun recordInteraction() {
-        lastInteractionTime = System.currentTimeMillis()
-    }
-
-    /**
      * 单击事件
      */
     fun onTap() {
-        recordInteraction()
-
-        // 如果正在巡边 → 回家
-        if (edgePhase == EdgePhase.CLIMBING_EDGE || edgePhase == EdgePhase.WALK_TO_LEFT) {
-            startReturnHome()
-            return
-        }
-
-        // 正常点击反应
         when (Random.nextInt(12)) {
             0 -> { expression = Expression.HAPPY; mood = Mood.HAPPY; affection = (affection + 5).coerceIn(0, 100); showMessage("好开心~") }
             1 -> { expression = Expression.POUT; showMessage("哼~") }
@@ -171,13 +125,6 @@ class PetState {
      * 双击事件
      */
     fun onDoubleTap() {
-        recordInteraction()
-
-        if (edgePhase != EdgePhase.NONE) {
-            startReturnHome()
-            return
-        }
-
         expression = Expression.HEART
         mood = Mood.EXCITED
         affection = (affection + 15).coerceIn(0, 100)
@@ -191,91 +138,6 @@ class PetState {
             mood = Mood.HAPPY
             onStateChange?.invoke()
         }
-    }
-
-    // ================================================================
-    // 巡边行走
-    // ================================================================
-
-    /**
-     * 开始巡边流程：先向左走到边框
-     */
-    fun startWalkToLeftEdge() {
-        recordInteraction() // 重新计时，防止重复触发
-        edgePhase = EdgePhase.WALK_TO_LEFT
-        action = Action.WALK_LEFT
-        facingRight = false
-        expression = Expression.NORMAL
-        mood = Mood.HAPPY
-        showMessage("走走~")
-        onStateChange?.invoke()
-        onStartEdgeWalk?.invoke()
-    }
-
-    /**
-     * 到达左边框，开始沿边框行进
-     */
-    fun startClimbingEdge() {
-        edgePhase = EdgePhase.CLIMBING_EDGE
-        edgeSide = 0  // 从左边开始
-        edgeProgress = 0f
-        action = Action.WALK_EDGE
-        onStateChange?.invoke()
-    }
-
-    /**
-     * 前进边框进度（由 Service 定时调用）
-     * 每步增加 0.01，走完一条边约 50 步
-     */
-    fun advanceEdge() {
-        if (edgePhase != EdgePhase.CLIMBING_EDGE) return
-
-        edgeProgress += 0.01f
-        if (edgeProgress >= 1f) {
-            // 切换到下一条边
-            edgeProgress = 0f
-            edgeSide = (edgeSide + 1) % 4
-            showMessage(when (edgeSide) {
-                0 -> "上来啦~"
-                1 -> "转~"
-                2 -> "这边~"
-                else -> "绕一圈~"
-            })
-        }
-        onEdgePositionNeeded?.invoke(edgeSide, edgeProgress)
-    }
-
-    /**
-     * 触摸后返回家中
-     */
-    fun startReturnHome() {
-        edgePhase = EdgePhase.RETURN_HOME
-        returnProgress = 1f
-        val msgs = listOf("回来啦~","嘿嘿~","还是这里舒服~","不转啦！","陪你玩~")
-        showMessage(msgs.random())
-        action = Action.WALK_RIGHT
-        facingRight = true
-        onStateChange?.invoke()
-        onReturnHome?.invoke()
-    }
-
-    /**
-     * 回家进度更新
-     */
-    fun advanceReturn(): Boolean {
-        if (edgePhase != EdgePhase.RETURN_HOME) return true
-        returnProgress -= 0.05f
-        if (returnProgress <= 0f) {
-            returnProgress = 0f
-            edgePhase = EdgePhase.NONE
-            action = Action.IDLE
-            expression = Expression.NORMAL
-            mood = Mood.HAPPY
-            onStateChange?.invoke()
-            showMessage("到啦~")
-            return true
-        }
-        return false
     }
 
     // ================================================================
@@ -334,64 +196,38 @@ class PetState {
             while (true) {
                 delay(15000)
 
-                // 如果已在巡边状态，不再触发
-                if (edgePhase != EdgePhase.NONE) continue
-
                 if (mood == Mood.HAPPY || mood == Mood.EXCITED) {
-                    // 30% 几率触发无聊
                     if (Random.nextInt(10) < 3) {
                         onIdle()
                     }
                 }
 
-                // 随机走动（不互动的间隙）
-                if (edgePhase == EdgePhase.NONE && Random.nextBoolean()) {
+                // 随机走动
+                if (Random.nextBoolean()) {
                     action = if (Random.nextBoolean()) Action.WALK_LEFT else Action.WALK_RIGHT
                     facingRight = action == Action.WALK_RIGHT
                     onStateChange?.invoke()
                     delay(3000)
-                    if (edgePhase == EdgePhase.NONE) {
-                        action = Action.IDLE
-                        onStateChange?.invoke()
-                    }
+                    action = Action.IDLE
+                    onStateChange?.invoke()
                 }
 
                 // 随机卖萌
-                if (edgePhase == EdgePhase.NONE && Random.nextBoolean()) {
+                if (Random.nextBoolean()) {
                     val autoMsg = listOf("嘿嘿~","我是最可爱的！","今天也要加油哦！","主人~在干嘛呢？","看我~看我~","好无聊...陪我玩嘛~")
                     showMessage(autoMsg.random())
                     expression = Expression.SMILE
                     onStateChange?.invoke()
                     delay(3000)
-                    if (edgePhase == EdgePhase.NONE) {
-                        expression = Expression.NORMAL
-                        onStateChange?.invoke()
-                    }
+                    expression = Expression.NORMAL
+                    onStateChange?.invoke()
                 }
             }
         }
     }
 
     /**
-     * 巡边监控（每秒检查是否 10 秒未互动）
-     */
-    private fun startEdgeWalkMonitor() {
-        edgeMonitorJob?.cancel()
-        edgeMonitorJob = scope.launch {
-            while (true) {
-                delay(2000)  // 每 2 秒检查一次
-                if (edgePhase != EdgePhase.NONE) continue  // 已经巡边中
-
-                val idleSeconds = (System.currentTimeMillis() - lastInteractionTime) / 1000
-                if (idleSeconds >= 10) {
-                    startWalkToLeftEdge()
-                }
-            }
-        }
-    }
-
-    /**
-     * 动画帧
+     * 动画帧计时
      */
     private fun startAnimation() {
         animationJob?.cancel()
@@ -407,7 +243,6 @@ class PetState {
     fun stop() {
         idleJob?.cancel()
         animationJob?.cancel()
-        edgeMonitorJob?.cancel()
         scope.cancel()
     }
 
