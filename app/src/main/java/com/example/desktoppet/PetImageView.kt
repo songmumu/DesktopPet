@@ -240,6 +240,17 @@ class PetImageView(
             petImage.rotation = sin(bounceOffset * 0.5f) * 2
             petImage.scaleX = 1f
             petImage.scaleY = if (petState.expression == PetState.Expression.HEART) 1.1f else 1f
+
+        // JUMP: 原地弹一下
+        if (petState.action == PetState.Action.JUMP) {
+            val jumpPhase = (bounceOffset / 10f) % 1f
+            val jumpArc = kotlin.math.sin(jumpPhase * Math.PI).toFloat()
+            petImage.translationY = translateY - jumpArc * 30
+        }
+        // DANCE: 左右摇摆
+        if (petState.action == PetState.Action.DANCE) {
+            petImage.rotation = kotlin.math.sin(bounceOffset * 0.3f * Math.PI.toFloat()) * 15
+        }
         }
     }
 }
