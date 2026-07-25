@@ -110,8 +110,8 @@ class PetService : Service() {
 
     private fun showPet() {
         try {
-            val petSizeDp = 200
-            val petPx = (petSizeDp * resources.displayMetrics.density).toInt()
+            val petSizeDp = PetSettings.getPetSizeDp(this)
+            val petPx = PetSettings.dpToPx(this, petSizeDp)
 
             val windowType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
