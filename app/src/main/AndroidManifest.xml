@@ -43,6 +43,13 @@
             </intent-filter>
         </activity>
 
+        <!-- 设置界面 -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="宠物设置"
+            android:theme="@style/Theme.DesktopPet" />
+
         <!-- 悬浮窗服务 -->
         <service
             android:name=".PetService"
