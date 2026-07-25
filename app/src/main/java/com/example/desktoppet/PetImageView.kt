@@ -99,8 +99,8 @@ class PetImageView(
     }
 
     init {
-        // 透明背景
-        setBackgroundColor(Color.TRANSPARENT)
+        // 半透明背景（定位用，确认窗口位置后可以改回透明）
+        setBackgroundColor(Color.argb(30, 255, 182, 193)) // 极淡粉色，能看到窗口位置但不遮挡
 
         // 1. 图片
         petImage = ImageView(context).apply {
