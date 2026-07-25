@@ -12,72 +12,59 @@ import android.graphics.Point
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.util.Log
-import android.util.TypedValue
 import android.view.Display
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
-import android.widget.FrameLayout
-import android.widget.Toast
 import androidx.core.app.NotificationCompat
 
 class PetService : Service() {
 
     companion object {
-        const val ACTION_START = "com.example.desktoppet.action.START"
-        const val ACTION_STOP = "com.example.desktoppet.action.STOP"
-        const val CHANNEL_ID = "desktop_pet_channel"
+        const val ACTION_START = "com.example.desktoppet.START"
+        const val ACTION_STOP = "com.example.desktoppet.STOP"
+        const val CHANNEL_ID = "desk_pet_channel"
         const val NOTIFICATION_ID = 1001
         const val DOUBAO_PACKAGE = "com.larus.nova"
+        private const val TAG = "PetService"
 
+        @Volatile
         var isRunning = false
             private set
     }
 
     private lateinit var windowManager: WindowManager
-    private var petView: android.view.View? = null
     private lateinit var petState: PetState
+    private var petView: View? = null
+    private var petImageView: PetImageView? = null
 
     // 屏幕尺寸
     private var screenWidth = 0
     private var screenHeight = 0
-    private var petDisplayWidth = 0
-    private var petDisplayHeight = 0
 
-    // 巡边位置更新
-    private val mainHandler = Handler(mainLooper)
-    private var edgeUpdateRunnable: Runnable? = null
+    // 默认位置（屏幕右下方）
+    private var homeX = 0
+    private var homeY = 0
+
+    // 触摸状态
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var longPressRunnable: Runnable? = null
     private var isLongPressed = false
-
-    // 默认位置（屏幕中下方靠右）
-    private val homeX: Int get() = (screenWidth * 0.7f).toInt()
-    private val homeY: Int get() = (screenHeight * 0.55f).toInt()
+    private var hasWalked = false
 
     override fun onCreate() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         getScreenSize()
+        homeX = (screenWidth * 0.7f).toInt()
+        homeY = (screenHeight * 0.55f).toInt()
         petState = PetState()
         createNotificationChannel()
-    }
-
-    private fun getScreenSize() {
-        try {
-            val display = windowManager.defaultDisplay
-            val metrics = DisplayMetrics()
-            display.getRealMetrics(metrics)
-            screenWidth = metrics.widthPixels
-            screenHeight = metrics.heightPixels
-            Log.d("PetService", "Screen: ${screenWidth}x${screenHeight}")
-        } catch (e: Exception) {
-            screenWidth = 1080
-            screenHeight = 2400
-            Log.e("PetService", "Failed to get screen size", e)
-        }
+        Log.d(TAG, "Service created. Screen: ${screenWidth}x${screenHeight}")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -127,7 +114,7 @@ class PetService : Service() {
         val stopPendingIntent = PendingIntent.getService(this, 0, stopIntent, PendingIntent.FLAG_IMMUTABLE)
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("桌面宠物")
-            .setContentText("长按可以打开豆包APP · 10秒不理我就溜达去啦~")
+            .setContentText("长按宠物可以打开豆包APP · 点我陪你玩~")
             .setSmallIcon(R.drawable.ic_pet_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
@@ -136,12 +123,14 @@ class PetService : Service() {
     }
 
     // ================================================================
-    // 显示/隐藏
+    // 显示宠物
     // ================================================================
 
     private fun showPet() {
         try {
-            val petImageView = PetImageView(this, petState)
+            val petPx = (280 * resources.displayMetrics.density).toInt()
+            val centerX = ((screenWidth - petPx) / 2).coerceAtLeast(0)
+            val centerY = ((screenHeight / 3) - (petPx / 2)).coerceAtLeast(0)
 
             val windowType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -150,206 +139,163 @@ class PetService : Service() {
                 WindowManager.LayoutParams.TYPE_PHONE
             }
 
-            // --- 第一阶段：全屏红色调试 ---
-            // 用 MATCH_PARENT + FLAG_NOT_TOUCHABLE 确保窗口可见且不干扰操作
-            val debugParams = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,
+            val layoutParams = WindowManager.LayoutParams(
+                petPx,
+                petPx,
                 windowType,
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
                         WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,
                 PixelFormat.RGBA_8888
             ).apply {
-                gravity = Gravity.FILL
-                x = 0
-                y = 0
+                gravity = Gravity.TOP or Gravity.START
+                x = centerX
+                y = centerY
             }
 
-            val debugView = android.widget.FrameLayout(this).apply {
-                setBackgroundColor(android.graphics.Color.RED)
-            }
+            val petImgView = PetImageView(this, petState)
+            petState.onLaunchApp = { openDoubao() }
 
-            windowManager.addView(debugView, debugParams)
-            petView = debugView
+            // 先尝试一次 addView，如果失败则说明悬浮窗被 ROM 拦截
+            windowManager.addView(petImgView, layoutParams)
+            petView = petImgView
+            petImageView = petImgView
 
-            // 3秒后切换为宠物视图
+            // 1秒后移除 FLAG_NOT_TOUCHABLE 以支持触摸
             mainHandler.postDelayed({
                 try {
-                    windowManager.removeView(debugView)
-                } catch (_: Exception) {}
-
-                val petPx = TypedValue.applyDimension(
-                    TypedValue.COMPLEX_UNIT_DIP, 280f,
-                    resources.displayMetrics
-                ).toInt()
-
-                val centerX = (screenWidth - petPx) / 2
-                val centerY = (screenHeight / 3) - (petPx / 2)
-
-                val layoutParams = WindowManager.LayoutParams(
-                    petPx,
-                    petPx,
-                    windowType,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                    PixelFormat.RGBA_8888
-                ).apply {
-                    gravity = Gravity.TOP or Gravity.START
-                    x = centerX.coerceAtLeast(0)
-                    y = centerY.coerceAtLeast(0)
+                    val lp = petImgView.layoutParams as WindowManager.LayoutParams
+                    lp.flags = lp.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+                    windowManager.updateViewLayout(petImgView, lp)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to enable touch", e)
                 }
+            }, 1000)
 
-                // 设置回调
-                petState.onLaunchApp = { openDoubao() }
-                petState.onStartEdgeWalk = { startEdgeWalkLoop() }
-                petState.onEdgePositionNeeded = { side, progress ->
-                    updateEdgePosition(side, progress)
-                }
-                petState.onReturnHome = { startReturnHomeLoop() }
+            // 欢迎气泡
+            mainHandler.postDelayed({
+                val welcomes = listOf("主人来啦~","长按可以找豆包玩哦！","终于见到你啦！","抱抱~","点我陪我玩~")
+                petState.onMessage?.invoke(welcomes.random())
+            }, 800)
 
-                setupTouchListener(petImageView, layoutParams)
+            setupTouchListener(petImgView, layoutParams)
 
-                windowManager.addView(petImageView, layoutParams)
-                petView = petImageView
-                petImageView.startAnimation()
-
-                petImageView.post {
-                    petDisplayWidth = petImageView.measuredWidth
-                    petDisplayHeight = petImageView.measuredHeight
-                    Log.d("PetService", "Pet size: ${petDisplayWidth}x${petDisplayHeight}")
-                }
-
-                // 欢迎语
-                mainHandler.postDelayed({
-                    val welcomes = listOf("主人来啦~","长按可以找豆包玩哦！","终于见到你啦！","抱抱~","10秒不理我我就溜达啦~")
-                    petState.onMessage?.invoke(welcomes.random())
-                }, 800)
-            }, 1000) // 1秒后切换
-
-            Toast.makeText(this, "宠物已出现在桌面！", Toast.LENGTH_SHORT).show()
+            Log.d(TAG, "Pet shown at ${centerX},${centerY} size=${petPx}")
+            Toast2.show(this, "宠物已出现在桌面！")
         } catch (e: SecurityException) {
-            Log.e("PetService", "No overlay permission", e)
-            Toast.makeText(this, "❌ 没有悬浮窗权限，请在设置中开启", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "No overlay permission", e)
+            Toast2.show(this, "❌ 没有悬浮窗权限，请在设置中开启")
         } catch (e: Exception) {
-            Log.e("PetService", "Failed to show pet", e)
-            Toast.makeText(this, "❌ 显示宠物失败: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+            Log.e(TAG, "Failed to show pet", e)
+            Toast2.show(this, "❌ 显示宠物失败: ${e.localizedMessage}")
         }
     }
 
     private fun hidePet() {
-        stopEdgeWalkLoop()
+        mainHandler.removeCallbacksAndMessages(null)
         petView?.let { view ->
             try {
                 windowManager.removeView(view)
             } catch (e: Exception) {
-                Log.e("PetService", "Failed to remove pet view", e)
+                Log.e(TAG, "Failed to remove pet view", e)
             }
             petView = null
+            petImageView = null
         }
     }
 
     // ================================================================
-    // 巡边位置更新
+    // 触摸事件（单击/双击/长按唤豆包）
     // ================================================================
 
-    private fun startEdgeWalkLoop() {
-        stopEdgeWalkLoop()
-        edgeUpdateRunnable = Runnable {
-            updateEdgeWalkPosition()
-        }
-        mainHandler.post(edgeUpdateRunnable!!)
-    }
+    private var lastTapTime = 0L
+    private var lastTapX = 0f
+    private var lastTapY = 0f
+    private val DOUBLE_TAP_TIMEOUT = 300L
+    private val MOVE_THRESHOLD = 15f
 
-    private fun stopEdgeWalkLoop() {
-        edgeUpdateRunnable?.let { mainHandler.removeCallbacks(it) }
-        edgeUpdateRunnable = null
-    }
+    private var isDragging = false
+    private var startX = 0f
+    private var startY = 0f
+    private var initialX = 0
+    private var initialY = 0
 
-    private fun updateEdgeWalkPosition() {
-        val state = petState
-        if (state.edgePhase == PetState.EdgePhase.NONE) return
+    private fun setupTouchListener(view: View, params: WindowManager.LayoutParams) {
+        view.setOnTouchListener { v, event ->
+            val px = event.rawX.toInt()
+            val py = event.rawY.toInt()
 
-        val view = petView ?: return
-        val params = view.layoutParams as WindowManager.LayoutParams
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    isDragging = false
+                    isLongPressed = false
+                    startX = event.rawX
+                    startY = event.rawY
+                    val lp = v.layoutParams as WindowManager.LayoutParams
+                    initialX = lp.x
+                    initialY = lp.y
 
-        when (state.edgePhase) {
-            PetState.EdgePhase.WALK_TO_LEFT -> {
-                params.x -= 8
-                if (params.x <= 0) {
-                    params.x = 0
-                    state.startClimbingEdge()
+                    // 启动长按检测（500ms）
+                    val runnable = Runnable {
+                        isLongPressed = true
+                        petState.onLaunchApp?.invoke()
+                    }
+                    longPressRunnable = runnable
+                    mainHandler.postDelayed(runnable, 500)
                 }
-                windowManager.updateViewLayout(view, params)
+                MotionEvent.ACTION_MOVE -> {
+                    val deltaX = event.rawX - startX
+                    val deltaY = event.rawY - startY
+                    val distance = Math.sqrt((deltaX * deltaX + deltaY * deltaY).toDouble()).toFloat()
+
+                    if (distance > MOVE_THRESHOLD) {
+                        // 取消长按，开始拖拽
+                        if (!isLongPressed) {
+                            longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                        }
+                        isDragging = true
+                        val lp = v.layoutParams as WindowManager.LayoutParams
+                        lp.x = (initialX + deltaX).toInt()
+                        lp.y = (initialY + deltaY).toInt()
+                        windowManager.updateViewLayout(v, lp)
+                    }
+                }
+                MotionEvent.ACTION_UP -> {
+                    longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+
+                    if (isLongPressed) {
+                        // 长按已触发唤豆包，不做其他操作
+                    } else if (isDragging) {
+                        // 拖拽结束，随机说一句话
+                        val dragMsgs = listOf("放这里~","好吧~","就这儿了！","挪一下~","可以了~")
+                        petState.onMessage?.invoke(dragMsgs.random())
+
+                        // 更新存放位置
+                        val lp = v.layoutParams as WindowManager.LayoutParams
+                        homeX = lp.x
+                        homeY = lp.y
+                    } else {
+                        // 单击/双击检测
+                        val now = System.currentTimeMillis()
+                        val dx = Math.abs(event.rawX - lastTapX)
+                        val dy = Math.abs(event.rawY - lastTapY)
+                        if (now - lastTapTime < DOUBLE_TAP_TIMEOUT && dx < MOVE_THRESHOLD && dy < MOVE_THRESHOLD) {
+                            petState.onDoubleTap()
+                            lastTapTime = 0
+                        } else {
+                            lastTapTime = now
+                            lastTapX = event.rawX
+                            lastTapY = event.rawY
+                            petState.onTap()
+                        }
+                    }
+                }
             }
-            PetState.EdgePhase.CLIMBING_EDGE -> {
-                state.advanceEdge()
-            }
-            else -> {}
-        }
-
-        if (state.edgePhase != PetState.EdgePhase.NONE &&
-            state.edgePhase != PetState.EdgePhase.RETURN_HOME) {
-            edgeUpdateRunnable = Runnable { updateEdgeWalkPosition() }
-            mainHandler.postDelayed(edgeUpdateRunnable!!, 50)
-        }
-    }
-
-    private fun updateEdgePosition(side: Int, progress: Float) {
-        val view = petView ?: return
-        val params = view.layoutParams as WindowManager.LayoutParams
-        val pw = petDisplayWidth.coerceAtLeast(1)
-        val ph = petDisplayHeight.coerceAtLeast(1)
-
-        when (side) {
-            0 -> {
-                params.x = 0
-                params.y = ((screenHeight - ph).toFloat() * (1f - progress)).toInt()
-            }
-            1 -> {
-                params.x = ((screenWidth - pw).toFloat() * progress).toInt()
-                params.y = 0
-            }
-            2 -> {
-                params.x = screenWidth - pw
-                params.y = ((screenHeight - ph).toFloat() * progress).toInt()
-            }
-            3 -> {
-                params.x = ((screenWidth - pw).toFloat() * (1f - progress)).toInt()
-                params.y = screenHeight - ph
-            }
-        }
-        windowManager.updateViewLayout(view, params)
-    }
-
-    private fun startReturnHomeLoop() {
-        stopEdgeWalkLoop()
-        edgeUpdateRunnable = Runnable {
-            returnToHomeStep()
-        }
-        mainHandler.post(edgeUpdateRunnable!!)
-    }
-
-    private fun returnToHomeStep() {
-        val view = petView ?: return
-        val params = view.layoutParams as WindowManager.LayoutParams
-
-        val done = petState.advanceReturn()
-        params.x = (params.x + (homeX - params.x) * 0.12f).toInt()
-        params.y = (params.y + (homeY - params.y) * 0.12f).toInt()
-        windowManager.updateViewLayout(view, params)
-
-        if (!done) {
-            edgeUpdateRunnable = Runnable { returnToHomeStep() }
-            mainHandler.postDelayed(edgeUpdateRunnable!!, 30)
-        } else {
-            params.x = homeX
-            params.y = homeY
-            windowManager.updateViewLayout(view, params)
-            edgeUpdateRunnable = null
+            true
         }
     }
 
     // ================================================================
-    // 打开豆包
+    // 打开豆包 APP
     // ================================================================
 
     private fun openDoubao() {
@@ -357,79 +303,46 @@ class PetService : Service() {
             val intent = packageManager.getLaunchIntentForPackage(DOUBAO_PACKAGE)
             if (intent != null) {
                 intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                val msgs = listOf("找豆包玩~","去找豆包咯！","让豆包陪你~","叫豆包来！")
-                petState.onMessage?.invoke(msgs.random())
                 startActivity(intent)
+                petState.onMessage?.invoke(
+                    listOf("找豆包玩咯~","来啦来啦~","去找豆包啦！","豆包~我来了！").random()
+                )
             } else {
                 petState.onMessage?.invoke("还没装豆包呢~去应用商店下载吧！")
             }
         } catch (e: Exception) {
-            petState.onMessage?.invoke("打不开豆包...")
+            Log.e(TAG, "Failed to open Doubao", e)
+            petState.onMessage?.invoke("打不开豆包了...")
         }
     }
 
     // ================================================================
-    // 触摸监听
+    // 工具方法
     // ================================================================
 
-    private fun setupTouchListener(view: PetImageView, params: WindowManager.LayoutParams) {
-        var initialX = 0
-        var initialY = 0
-        var initialTouchX = 0f
-        var initialTouchY = 0f
-        var isDragging = false
-
-        view.setOnTouchListener { _, event ->
-            when (event.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    initialX = params.x
-                    initialY = params.y
-                    initialTouchX = event.rawX
-                    initialTouchY = event.rawY
-                    isDragging = false
-                    isLongPressed = false
-
-                    longPressRunnable?.let { mainHandler.removeCallbacks(it) }
-                    longPressRunnable = Runnable {
-                        isLongPressed = true
-                        petState.onLaunchApp?.invoke()
-                    }
-                    mainHandler.postDelayed(longPressRunnable!!, 500)
-                    true
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    val deltaX = (event.rawX - initialTouchX).toInt()
-                    val deltaY = (event.rawY - initialTouchY).toInt()
-
-                    if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
-                        isDragging = true
-                        if (!isLongPressed) {
-                            longPressRunnable?.let { mainHandler.removeCallbacks(it) }
-                        }
-                        params.x = initialX + deltaX
-                        params.y = initialY + deltaY
-                        windowManager.updateViewLayout(view, params)
-                    }
-                    true
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    longPressRunnable?.let { mainHandler.removeCallbacks(it) }
-
-                    if (isLongPressed) {
-                        // 长按已完成
-                    } else if (!isDragging) {
-                        view.performClick()
-                    } else {
-                        val drops = listOf("放这里啦~","嘿嘿新家~","这儿不错~","换个位置~","好耶！")
-                        mainHandler.postDelayed({
-                            petState.onMessage?.invoke(drops.random())
-                        }, 300)
-                    }
-                    isLongPressed = false
-                    true
-                }
-                else -> false
-            }
+    private fun getScreenSize() {
+        val display = windowManager.defaultDisplay
+        val size = Point()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            val metrics = windowManager.currentWindowMetrics
+            size.set(metrics.bounds.width(), metrics.bounds.height())
+        } else {
+            @Suppress("DEPRECATION")
+            display.getRealSize(size)
         }
+        screenWidth = size.x
+        screenHeight = size.y
+    }
+}
+
+/**
+ * 在 Service 中显示 Toast 的工具
+ */
+object Toast2 {
+    private var lastToast: android.widget.Toast? = null
+    fun show(context: Context, text: String) {
+        lastToast?.cancel()
+        lastToast = android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT)
+        lastToast?.show()
     }
 }
