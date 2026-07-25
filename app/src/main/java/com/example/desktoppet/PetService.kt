@@ -150,8 +150,8 @@ class PetService : Service() {
             ).toInt()
 
             // 居中放置（避免跑出屏幕边缘）
-            val centerX = (screenSize.x - petPx) / 2
-            val centerY = (screenSize.y / 3) - (petPx / 2)  // 上方1/3区域
+            val centerX = (screenWidth - petPx) / 2
+            val centerY = (screenHeight / 3) - (petPx / 2)  // 上方1/3区域
 
             val layoutParams = WindowManager.LayoutParams(
                 petPx,
