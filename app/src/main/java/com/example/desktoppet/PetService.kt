@@ -25,6 +25,9 @@ class PetService : Service() {
         const val ACTION_STOP = "com.example.desktoppet.action.STOP"
         const val CHANNEL_ID = "desktop_pet_channel"
         const val NOTIFICATION_ID = 1001
+
+        // 豆包APP包名
+        const val DOUBAO_PACKAGE = "com.larus.nova"
         
         var isRunning = false
             private set
@@ -33,6 +36,11 @@ class PetService : Service() {
     private lateinit var windowManager: WindowManager
     private var petView: PetImageView? = null
     private lateinit var petState: PetState
+
+    // 长按检测
+    private val mainHandler = Handler(mainLooper)
+    private var longPressRunnable: Runnable? = null
+    private var isLongPressed = false
     
     override fun onCreate() {
         super.onCreate()
@@ -94,7 +102,7 @@ class PetService : Service() {
         
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("桌面宠物")
-            .setContentText("宠物正在桌面上陪伴你")
+            .setContentText("长按宠物可以打开豆包APP")
             .setSmallIcon(R.drawable.ic_pet_notification)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
@@ -103,10 +111,8 @@ class PetService : Service() {
     }
     
     private fun showPet() {
-        // 创建宠物图片视图
         val petImageView = PetImageView(this, petState)
 
-        // 设置布局参数
         val layoutParams = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -125,19 +131,20 @@ class PetService : Service() {
             y = 100
         }
 
-        // 添加触摸监听（拖动 + 点击）
+        // 设置长按唤起豆包
+        petState.onLaunchApp = {
+            openDoubao()
+        }
+
         setupTouchListener(petImageView, layoutParams)
 
-        // 添加到窗口
         windowManager.addView(petImageView, layoutParams)
         petView = petImageView
-
-        // 启动动画
         petImageView.startAnimation()
 
-        // 启动欢迎语（延迟 0.8 秒，等宠物出现）
-        Handler(mainLooper).postDelayed({
-            val welcomes = listOf("主人来啦~","嘿嘿你来了！","终于见到你啦！","抱抱~","想你啦！")
+        // 启动欢迎语
+        mainHandler.postDelayed({
+            val welcomes = listOf("主人来啦~","长按可以找豆包玩哦！","终于见到你啦！","抱抱~","想你啦！")
             petState.onMessage?.invoke(welcomes.random())
         }, 800)
     }
@@ -146,6 +153,27 @@ class PetService : Service() {
         petView?.let { view ->
             windowManager.removeView(view)
             petView = null
+        }
+    }
+    
+    /**
+     * 打开豆包APP
+     */
+    private fun openDoubao() {
+        try {
+            val intent = packageManager.getLaunchIntentForPackage(DOUBAO_PACKAGE)
+            if (intent != null) {
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                // 告诉用户要去找豆包了
+                val msgs = listOf("找豆包玩~","去找豆包咯！","让豆包陪你~","叫豆包来！")
+                petState.onMessage?.invoke(msgs.random())
+                startActivity(intent)
+            } else {
+                // 没安装豆包
+                petState.onMessage?.invoke("还没装豆包呢~去应用商店下载吧！")
+            }
+        } catch (e: Exception) {
+            petState.onMessage?.invoke("打不开豆包...")
         }
     }
     
@@ -164,6 +192,15 @@ class PetService : Service() {
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
                     isDragging = false
+                    isLongPressed = false
+
+                    // 启动长按检测（500ms后触发）
+                    longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                    longPressRunnable = Runnable {
+                        isLongPressed = true
+                        petState.onLaunchApp?.invoke()
+                    }
+                    mainHandler.postDelayed(longPressRunnable!!, 500)
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -172,6 +209,10 @@ class PetService : Service() {
 
                     if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
                         isDragging = true
+                        // 移动时取消长按
+                        if (!isLongPressed) {
+                            longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+                        }
                         params.x = initialX + deltaX
                         params.y = initialY + deltaY
                         windowManager.updateViewLayout(view, params)
@@ -179,17 +220,22 @@ class PetService : Service() {
                     true
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    if (!isDragging) {
-                        // 由 PetImageView 内部处理单击/双击
+                    // 取消长按检测
+                    longPressRunnable?.let { mainHandler.removeCallbacks(it) }
+
+                    if (isLongPressed) {
+                        // 长按已完成，不做其他操作
+                    } else if (!isDragging) {
+                        // 单击/双击
                         view.performClick()
                     } else {
-                        // 拖动结束后随机说一句
+                        // 拖动结束
                         val drops = listOf("放这里啦~","嘿嘿新家~","这儿不错~","换个位置~","好耶！")
-                        val dropMsg = drops.random()
-                        Handler(mainLooper).postDelayed({
-                            petState.onMessage?.invoke(dropMsg)
+                        mainHandler.postDelayed({
+                            petState.onMessage?.invoke(drops.random())
                         }, 300)
                     }
+                    isLongPressed = false
                     true
                 }
                 else -> false
