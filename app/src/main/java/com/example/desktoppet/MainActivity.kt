@@ -29,7 +29,8 @@ fun MainScreen() {
     val context = LocalContext.current
     var isServiceRunning by remember { mutableStateOf(false) }
     var hasOverlayPermission by remember { mutableStateOf(false) }
-    
+    var hasNotificationPermission by remember { mutableStateOf(true) } // 默认true，Android 13以下不需要
+
     // 检查悬浮窗权限
     fun checkOverlayPermission(): Boolean {
         return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -38,39 +39,63 @@ fun MainScreen() {
             true
         }
     }
-    
-    // 检查服务是否运行
-    fun checkServiceRunning(): Boolean {
-        return PetService.isRunning
+
+    // 检查通知权限（Android 13+）
+    fun checkNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(
+                context, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
     }
-    
+
+    // 检查服务是否运行
+    fun checkServiceRunning(): Boolean = PetService.isRunning
+
     // 更新状态
     LaunchedEffect(Unit) {
         hasOverlayPermission = checkOverlayPermission()
+        hasNotificationPermission = checkNotificationPermission()
         isServiceRunning = checkServiceRunning()
     }
-    
-    // 权限请求启动器
+
+    // 悬浮窗权限请求
     val overlayPermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.StartActivityForResult()
     ) { _ ->
         hasOverlayPermission = checkOverlayPermission()
         if (!hasOverlayPermission) {
-            Toast.makeText(context, "需要悬浮窗权限才能显示宠物", Toast.LENGTH_LONG).show()
+            Toast.makeText(context, "❌ 需要悬浮窗权限才能显示宠物", Toast.LENGTH_LONG).show()
         }
     }
-    
-    // 启动宠物服务
+
+    // 通知权限请求（Android 13+）
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission = granted
+        if (!granted) {
+            Toast.makeText(context, "⚠️ 建议开启通知权限，否则宠物可能无法正常运行", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    // 启动宠物
     fun startPetService() {
+        // Android 13+ 先请求通知权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            return
+        }
+
         if (!hasOverlayPermission) {
-            // 请求悬浮窗权限
             val intent = Intent(
                 Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
                 Uri.parse("package:${context.packageName}")
             )
             overlayPermissionLauncher.launch(intent)
         } else {
-            // 启动服务
             val intent = Intent(context, PetService::class.java).apply {
                 action = PetService.ACTION_START
             }
@@ -80,11 +105,11 @@ fun MainScreen() {
                 context.startService(intent)
             }
             isServiceRunning = true
-            Toast.makeText(context, "宠物已启动！", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "✅ 宠物已启动！看看桌面～", Toast.LENGTH_SHORT).show()
         }
     }
-    
-    // 停止宠物服务
+
+    // 停止宠物
     fun stopPetService() {
         val intent = Intent(context, PetService::class.java).apply {
             action = PetService.ACTION_STOP
@@ -93,7 +118,7 @@ fun MainScreen() {
         isServiceRunning = false
         Toast.makeText(context, "宠物已关闭", Toast.LENGTH_SHORT).show()
     }
-    
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -113,61 +138,74 @@ fun MainScreen() {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            // 宠物图标
             Icon(
                 imageVector = Icons.Default.Pets,
                 contentDescription = "宠物",
                 modifier = Modifier.size(120.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
-            // 标题
+
             Text(
                 text = "桌面互动小宠物",
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.onBackground
             )
-            
+
             Spacer(modifier = Modifier.height(16.dp))
-            
-            // 描述
+
             Text(
-                text = "一个可爱的桌面悬浮宠物\n点击互动、随机卖萌、心情变化",
+                text = "真人照片 · 行走动画 · 巡边漫游\n长按唤豆包 · 10秒不理就溜达啦~",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center
             )
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // 权限状态
-            if (!hasOverlayPermission) {
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // 权限状态提示
+            if (!hasOverlayPermission || !hasNotificationPermission) {
                 Card(
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.errorContainer
                     )
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Settings,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.error
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = "需要悬浮窗权限",
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        if (!hasOverlayPermission) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "❌ 未授权「悬浮窗权限」",
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
+                        if (!hasNotificationPermission && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (!hasOverlayPermission) Spacer(modifier = Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Settings,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(12.dp))
+                                Text(
+                                    text = "⚠️ 未授权「通知权限」",
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }
-            
+
             // 启动/停止按钮
             Button(
                 onClick = {
@@ -198,9 +236,9 @@ fun MainScreen() {
                     style = MaterialTheme.typography.titleMedium
                 )
             }
-            
+
             Spacer(modifier = Modifier.height(24.dp))
-            
+
             // 使用说明
             Card(
                 modifier = Modifier.fillMaxWidth(),
@@ -218,11 +256,26 @@ fun MainScreen() {
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                     Text(
-                        text = "• 点击宠物：随机反应（开心/卖萌/打招呼）\n• 长按拖拽：移动宠物位置\n• 长时间不理：宠物会生气或嘟嘴\n• 下拉通知栏：快速关闭宠物",
+                        text = "① 点击「启动宠物」→ 授权「悬浮窗权限」\n" +
+                                "② 宠物出现在桌面，开始互动！\n" +
+                                "③ 长按宠物 → 打开豆包APP\n" +
+                                "④ 10秒不互动 → 自动巡边行走\n" +
+                                "⑤ 巡边时触摸 → 回家",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                     )
                 }
+            }
+
+            // (Android 13+ 提示)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "💡 Android 13+ 会自动请求通知权限\n没有通知宠物可能无法正常运行",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
+                    textAlign = TextAlign.Center
+                )
             }
         }
     }
