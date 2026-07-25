@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Pets
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -235,6 +236,25 @@ fun MainScreen() {
                     text = if (isServiceRunning) "关闭宠物" else "启动宠物",
                     style = MaterialTheme.typography.titleMedium
                 )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 设置按钮
+            OutlinedButton(
+                onClick = {
+                    context.startActivity(Intent(context, SettingsActivity::class.java))
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Build,
+                    contentDescription = null
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("宠物设置")
             }
 
             Spacer(modifier = Modifier.height(24.dp))
