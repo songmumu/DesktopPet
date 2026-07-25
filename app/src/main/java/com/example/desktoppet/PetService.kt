@@ -14,6 +14,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.util.DisplayMetrics
 import android.util.Log
+import android.util.TypedValue
 import android.view.Display
 import android.view.Gravity
 import android.view.MotionEvent
@@ -142,17 +143,22 @@ class PetService : Service() {
         try {
             val petImageView = PetImageView(this, petState)
 
+            // 将 280dp 转换为像素（确保窗口可见尺寸）
+            val petPx = TypedValue.applyDimension(
+                TypedValue.COMPLEX_UNIT_DIP, 280f,
+                resources.displayMetrics
+            ).toInt()
+
             val layoutParams = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                petPx,
+                petPx,
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 } else {
                     @Suppress("DEPRECATION")
                     WindowManager.LayoutParams.TYPE_PHONE
                 },
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
-                        WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
