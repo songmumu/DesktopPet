@@ -34,7 +34,7 @@ class PetImageView(
 
     private var lastTapTime = 0L
 
-    // 行走动画帧资源 ID 数组
+    // 行走动画帧资源 ID 数组（7帧，去除第8帧）
     private val walkFrames = intArrayOf(
         R.drawable.pet_walk_1,
         R.drawable.pet_walk_2,
@@ -42,16 +42,15 @@ class PetImageView(
         R.drawable.pet_walk_4,
         R.drawable.pet_walk_5,
         R.drawable.pet_walk_6,
-        R.drawable.pet_walk_7,
-        R.drawable.pet_walk_8
+        R.drawable.pet_walk_7
     )
 
     // 上次显示的行走帧索引
     private var lastWalkFrameIndex = -1
 
     // 行走帧速率：每 N 帧切换一次（animationFrame 每 50ms 递增一次）
-    // 每 3 帧换一张 = 150ms/帧，循环 8 帧 = 1.2 秒/完整循环
-    private val WALK_FRAME_RATE = 3
+// 5 = 250ms/帧，7帧一个循环约 1.75 秒（走路更慢更稳）
+    private val WALK_FRAME_RATE = 5
 
     /**
      * 根据当前状态返回要显示的图片资源
@@ -60,7 +59,7 @@ class PetImageView(
         // 走路时显示行走帧
         if (petState.action == PetState.Action.WALK_LEFT ||
             petState.action == PetState.Action.WALK_RIGHT) {
-            val frameIndex = (petState.animationFrame / WALK_FRAME_RATE) % 8
+            val frameIndex = (petState.animationFrame / WALK_FRAME_RATE) % walkFrames.size
             return walkFrames[frameIndex]
         }
 
@@ -230,7 +229,7 @@ class PetImageView(
 
         // 行走时：每帧更新行走关键帧
         if (isWalking) {
-            val frameIndex = (petState.animationFrame / WALK_FRAME_RATE) % 8
+            val frameIndex = (petState.animationFrame / WALK_FRAME_RATE) % walkFrames.size
             if (frameIndex != lastWalkFrameIndex) {
                 lastWalkFrameIndex = frameIndex
                 petImage.setImageResource(walkFrames[frameIndex])
