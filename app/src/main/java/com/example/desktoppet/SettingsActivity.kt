@@ -79,7 +79,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 modifier = Modifier.padding(bottom = 24.dp)
             )
 
-            // 预设按钮
+            // 预设按钮 - 使用两行显示
             Text(
                 text = "预设大小",
                 style = MaterialTheme.typography.titleMedium,
@@ -88,19 +88,34 @@ fun SettingsScreen(onBack: () -> Unit) {
                     .padding(bottom = 12.dp)
             )
 
-            // 预设按钮网格
-            FlowRow(
+            // 第一行预设
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                PetSettings.SIZE_OPTIONS.forEach { (sizeDp, label) ->
+                PetSettings.SIZE_OPTIONS.take(4).forEach { (sizeDp, label) ->
                     val isSelected = currentSizeDp == sizeDp
                     FilterChip(
                         selected = isSelected,
                         onClick = { currentSizeDp = sizeDp },
-                        label = { Text("$label\n${sizeDp}dp", textAlign = TextAlign.Center) },
-                        modifier = Modifier.padding(4.dp)
+                        label = { Text("$label ${sizeDp}dp", textAlign = TextAlign.Center) }
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // 第二行预设
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                PetSettings.SIZE_OPTIONS.drop(4).forEach { (sizeDp, label) ->
+                    val isSelected = currentSizeDp == sizeDp
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { currentSizeDp = sizeDp },
+                        label = { Text("$label ${sizeDp}dp", textAlign = TextAlign.Center) }
                     )
                 }
             }
@@ -118,7 +133,7 @@ fun SettingsScreen(onBack: () -> Unit) {
                 value = currentSizeDp.toFloat(),
                 onValueChange = { currentSizeDp = it.toInt() },
                 valueRange = 60f..250f,
-                steps = 189, // (250-60)/1 - 1
+                steps = 189,
                 modifier = Modifier.padding(vertical = 8.dp)
             )
 
@@ -201,78 +216,6 @@ fun SettingsScreen(onBack: () -> Unit) {
                 Icon(Icons.Default.Check, contentDescription = null)
                 Spacer(modifier = Modifier.width(8.dp))
                 Text("保存设置", style = MaterialTheme.typography.titleMedium)
-            }
-        }
-    }
-}
-
-// 简单的 FlowRow 实现
-@Composable
-fun FlowRow(
-    modifier: Modifier = Modifier,
-    horizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
-    verticalArrangement: Arrangement.Vertical = Arrangement.Top,
-    content: @Composable () -> Unit
-) {
-    Layout(
-        content = content,
-        modifier = modifier
-    ) { measurables, constraints ->
-        val hGapPx = 8.dp.roundToPx()
-        val vGapPx = 8.dp.roundToPx()
-        val rows = mutableListOf<List<androidx.compose.ui.layout.Placeable>>()
-        val rowWidths = mutableListOf<Int>()
-        val rowHeights = mutableListOf<Int>()
-
-        var currentRow = mutableListOf<androidx.compose.ui.layout.Placeable>()
-        var currentRowWidth = 0
-        var currentRowHeight = 0
-
-        measurables.forEach { measurable ->
-            val placeable = measurable.measure(constraints)
-
-            if (currentRow.isNotEmpty() &&
-                currentRowWidth + hGapPx + placeable.width > constraints.maxWidth
-            ) {
-                rows.add(currentRow)
-                rowWidths.add(currentRowWidth)
-                rowHeights.add(currentRowHeight)
-                currentRow = mutableListOf()
-                currentRowWidth = 0
-                currentRowHeight = 0
-            }
-
-            currentRow.add(placeable)
-            currentRowWidth += if (currentRow.size == 1) placeable.width else hGapPx + placeable.width
-            currentRowHeight = maxOf(currentRowHeight, placeable.height)
-        }
-
-        if (currentRow.isNotEmpty()) {
-            rows.add(currentRow)
-            rowWidths.add(currentRowWidth)
-            rowHeights.add(currentRowHeight)
-        }
-
-        val totalHeight = rowHeights.sum() + (rows.size - 1).coerceAtLeast(0) * vGapPx
-
-        layout(
-            width = constraints.maxWidth,
-            height = totalHeight.coerceIn(constraints.minHeight, constraints.maxHeight)
-        ) {
-            var y = 0
-            rows.forEachIndexed { rowIndex, row ->
-                var x = when (horizontalArrangement) {
-                    Arrangement.Center -> (constraints.maxWidth - rowWidths[rowIndex]) / 2
-                    Arrangement.End -> constraints.maxWidth - rowWidths[rowIndex]
-                    else -> 0
-                }
-
-                row.forEach { placeable ->
-                    placeable.placeRelative(x, y)
-                    x += placeable.width + hGapPx
-                }
-
-                y += rowHeights[rowIndex] + vGapPx
             }
         }
     }
